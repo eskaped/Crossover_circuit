@@ -1,0 +1,11 @@
+Canali: min -10 max 10
+
+Daq Par:
+trigger: 0v falling
+sample rate: 250000
+N_samples: 25000
+min: 10
+max 25000
+step: 100
+vpp: 5
+wait: 10
