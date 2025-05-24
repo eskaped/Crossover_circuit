@@ -14,14 +14,14 @@
 #include <algorithm>
 #include <string>
 
-void Style()
+void SamuStyle()
 {
     gStyle->SetCanvasPreferGL();
     gStyle->SetOptFit(1111);
     gStyle->SetOptFit(1111);
 }
 
-std::size_t const N_BLOCKS{461};
+Int_t N_BLOCKS{461};
 std::string output_data_block_filename{"./data_root/output_data_block_"};
 std::string output_param_filename{"./data_root/output_param_"};
 
@@ -559,9 +559,10 @@ void FastFourierTransform(int n_block, int only_Vi)
     fft_result_histo->GetXaxis()->SetRangeUser(0, 500);
     fft_result_histo->Draw();
 }
-void rooting_rootest()
+void rooting_rootest(Int_t input_n_blocks)
 {
-    Style();
+    N_BLOCKS = input_n_blocks;
+    SamuStyle();
     std::ifstream file_count{"./input_data/ampl_data"};
 
     Double_t const Rw{2.2032000E+02};
@@ -594,15 +595,15 @@ void rooting_rootest()
             new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %lg %*lg %lg %lg"},
             new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %*lg %lg %lg %lg"}};
 
-        // TF1 *func_arr[3]{
-        //     new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
-        //     new TF1{"V_w_fit", "[0]*cos([1]*x - [2])"},
-        //     new TF1{"V_t_fit", "[0]*cos([1]*x - [2])"}};
-
         TF1 *func_arr[3]{
             new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
-            new TF1{"V_w_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"},
+            new TF1{"V_w_fit", "[0]*cos([1]*x - [2])"},
             new TF1{"V_t_fit", "[0]*cos([1]*x - [2])"}};
+
+        // TF1 *func_arr[3]{
+        //     new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
+        //     new TF1{"V_w_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"},
+        //     new TF1{"V_t_fit", "[0]*cos([1]*x - [2])"}};
 
         std::ifstream file_params_in{output_param_filename + std::to_string(n_block) + ".txt"};
         double frequency;
@@ -622,10 +623,10 @@ void rooting_rootest()
             double pulsation = 2 * TMath::Pi() * frequency;
 
             // test--------------------------------------------------------------------
-            if (i == 1)
-                func_arr[i]->SetParameters(amplitude, pulsation, phase, amplitude / 292, pulsation * 3, phase);
-            else
-            {
+            // if (i == 1)
+            //     func_arr[i]->SetParameters(amplitude, pulsation, phase, amplitude / 292, pulsation * 3, phase);
+            // else
+            // {
 
                 func_arr[i]->SetParameter(0, amplitude);
                 func_arr[i]->SetParameter(1, pulsation);
@@ -637,11 +638,11 @@ void rooting_rootest()
 
                 // func_arr[i]->FixParameter(0, amplitude);
                 // func_arr[i]->FixParameter(1, pulsation);
-            }
+            // }
             // test--------------------------------------------------------------------
 
             func_arr[i]->SetNumberFitPoints(10000);
-            func_arr[i]->SetNumberFitPoints(10000);
+            func_arr[i]->SetNpx(10000);
 
             if (((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0)) // i.e.: error
             {
@@ -758,14 +759,14 @@ void rooting_rootest()
     phase_func_t->SetLineColor(kBlue);
     phase_func_w->SetLineColor(kRed);
 
-    ampl_graph[1]->Fit(ampl_func_w, "E");
+    ampl_graph[1]->Fit(ampl_func_w, "M, E");
     std::cout << std::endl;
-    ampl_graph[2]->Fit(ampl_func_t, "E");
+    ampl_graph[2]->Fit(ampl_func_t, "M, E");
     std::cout << std::endl;
 
-    phase_graph[1]->Fit(phase_func_w, "E");
+    phase_graph[1]->Fit(phase_func_w, "M, E");
     std::cout << std::endl;
-    phase_graph[2]->Fit(phase_func_t, "E");
+    phase_graph[2]->Fit(phase_func_t, "M, E");
     std::cout << std::endl;
 
     ampl_graph[0]->SetMarkerColor(kBlack);
