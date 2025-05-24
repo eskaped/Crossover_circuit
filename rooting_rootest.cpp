@@ -10,10 +10,29 @@
 #include "TStyle.h"
 #include "TVirtualFFT.h"
 #include "TH1D.h"
+#include "TFile.h"
 #include <fstream>
 #include <algorithm>
 #include <string>
 
+// returns the voltage read from settings.txt
+int GetVoltage()
+{
+    std::ifstream settings_file{"./input_data/settings.txt"};
+    if (!settings_file.is_open())
+        std::cout << "Failed to open settings.txt" << std::endl;
+
+    std::string input;
+    do
+    {
+        settings_file >> input;
+    } while (input != "vpp:" && !settings_file.eof());
+
+    settings_file >> input;
+    std::cout << "Vpp: " << atoi(input.c_str()) << std::endl;
+    settings_file.close();
+    return atoi(input.c_str());
+}
 void SamuStyle()
 {
     gStyle->SetCanvasPreferGL();
@@ -389,8 +408,197 @@ void FitBlock(int n_block, int only_Vi)
     V_arr[only_Vi]->Draw("APE");
 }
 
-void PhaseShiftError()
+void PhaseShiftError(int n_blocks_input)
 {
+    N_BLOCKS = n_blocks_input;
+
+    Double_t freq_arr[N_BLOCKS];
+    Double_t freq_err_arr[N_BLOCKS];
+
+    Double_t phase_arr[3][N_BLOCKS];
+    Double_t phase_err_arr[3][N_BLOCKS];
+
+    for (size_t n_block = 0; n_block != N_BLOCKS; ++n_block)
+    {
+        TGraphErrors *V_arr[3]{
+            new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %lg %*lg %*lg %lg %lg"},
+            new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %lg %*lg %lg %lg"},
+            new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %*lg %lg %lg %lg"}};
+
+        TF1 *func_arr[3]{
+            new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
+            new TF1{"V_w_fit", "[0]*cos([1]*x - [2])"},
+            new TF1{"V_t_fit", "[0]*cos([1]*x - [2])"}};
+
+        std::ifstream file_params_in{output_param_filename + std::to_string(n_block) + ".txt"};
+        double frequency;
+        file_params_in >> frequency;
+
+        // set parameters
+        for (int i = 0; i != 3; ++i)
+        {
+            double amplitude;
+            double phase;
+            file_params_in >> amplitude;
+            file_params_in >> phase;
+            phase = phase * TMath::Pi() / 180.; // to rad
+
+            phase -= TMath::Pi() / 2.; // to account for shifting in converter
+
+            double pulsation = 2 * TMath::Pi() * frequency;
+
+            func_arr[i]->SetParameter(0, amplitude);
+            func_arr[i]->SetParameter(1, pulsation);
+            // func_arr[i]->SetParameter(2, phase);
+
+            func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
+            func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
+            // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
+
+            func_arr[i]->SetNumberFitPoints(10000);
+            func_arr[i]->SetNpx(10000);
+
+            if (((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0)) // i.e.: error
+            {
+                std::cout << "Invalid Fit! Block n: " << n_block << ", graph: " << i << " [0,1,2=V_s,V_w,V_t]\n";
+
+                // only V_s freq
+                if (i == 0)
+                {
+                    freq_arr[n_block] = pulsation / (2. * TMath::Pi());
+                    freq_err_arr[n_block] = (pulsation / 10.) / (2. * TMath::Pi());
+                }
+                phase_arr[i][n_block] = ClampAngle(phase);
+                phase_err_arr[i][n_block] = ClampAngle(phase) / 10;
+            }
+            else
+            { // only V_s freq
+
+                // ci è stato riferito (Marco e Fonseca) che root quando calcola gli errori sui parametri
+                // restituisce l'autovalore della matrice di covarianza che, in teoria, va moltiplicato
+                // per la sqrt(chi quadro ridotto). Root non lo fa perché assume sia circa 1. Per correttezza
+                // lo moltiplichiamo noi.
+                Double_t root_chi{std::sqrt(func_arr[i]->GetChisquare() / func_arr[i]->GetNDF())};
+                if (i == 0)
+                {
+                    freq_arr[n_block] = func_arr[i]->GetParameter(1) / (2. * TMath::Pi());
+                    freq_err_arr[n_block] = (func_arr[i]->GetParError(1) * root_chi) / (2. * TMath::Pi());
+                }
+                phase_arr[i][n_block] = ClampAngle(func_arr[i]->GetParameter(2));
+                phase_err_arr[i][n_block] = func_arr[i]->GetParError(2) * root_chi;
+            }
+            std::cout << "[" << i << "]" << "[" << n_block << "]" << func_arr[i]->GetChisquare() / func_arr[i]->GetNDF() << '\n';
+        }
+        file_params_in.close();
+        for (int i = 0; i != 3; ++i)
+        {
+            delete V_arr[i];
+            delete func_arr[i];
+        }
+    }
+
+    TGraphErrors *phase_shift_graph[3];
+    TF1 *func_phase_shift[3];
+    for (int i = 0; i != 3; ++i)
+    {
+        phase_shift_graph[i] = new TGraphErrors(N_BLOCKS, freq_arr, phase_arr[i], freq_err_arr, phase_err_arr[i]);
+        func_phase_shift[i] = new TF1(("func_phase_shift_" + std::to_string(i)).c_str(), "[0]+[1]*x", 0., 25000.);
+        func_phase_shift[i]->SetParName(0, "intercept");
+        func_phase_shift[i]->SetParName(1, "slope");
+        // func_phase_shift[i]->SetParameter(1, -TMath::PiOver2());
+    }
+    // func_phase_shift[0]->SetParameter(0, 0);
+    // func_phase_shift[1]->SetParameter(0, -9.6E-6);
+    // func_phase_shift[2]->SetParameter(0, -2.64E-5);
+
+    // REGRESSIONE LINEARE y = A + Bx
+    for (int i = 0; i != 3; ++i)
+    {
+        Double_t sum_wx2 = 0;
+        Double_t sum_wx = 0;
+        Double_t sum_w = 0;
+        for (int j = 0; j != N_BLOCKS; ++j)
+        {
+            Double_t w = 1 / (phase_err_arr[i][j] * phase_err_arr[i][j]);
+            Double_t x = freq_arr[j];
+
+            sum_wx2 += w * x * x;
+            sum_wx += w * x;
+            sum_w += w;
+        }
+
+        Double_t delta_w = sum_w * sum_wx2 - sum_wx * sum_wx;
+        Double_t A{0.};
+        Double_t B{0.};
+        Double_t A_err{std::sqrt(sum_wx2 / delta_w)};
+        Double_t B_err{std::sqrt(sum_w / delta_w)};
+
+        for (int j = 0; j != N_BLOCKS; ++j)
+        {
+            Double_t w = 1 / (phase_err_arr[i][j] * phase_err_arr[i][j]);
+            Double_t x = freq_arr[j];
+            Double_t y = phase_arr[i][j];
+
+            Double_t alpha = (w * sum_wx2 - w * x * sum_wx) / delta_w;
+            Double_t beta = (w * x * sum_w - w * sum_wx) / delta_w;
+
+            A += alpha * y;
+            B += beta * y;
+        }
+
+        func_phase_shift[i]->SetParameter(0, A);
+        func_phase_shift[i]->SetParameter(1, B);
+        func_phase_shift[i]->SetParError(0, A_err);
+        func_phase_shift[i]->SetParError(1, B_err);
+    }
+
+    func_phase_shift[0]->SetLineColor(kBlack);
+    func_phase_shift[1]->SetLineColor(kRed);
+    func_phase_shift[2]->SetLineColor(kBlue);
+
+    phase_shift_graph[0]->SetLineColor(kBlack);
+    phase_shift_graph[1]->SetLineColor(kRed);
+    phase_shift_graph[2]->SetLineColor(kBlue);
+
+    phase_shift_graph[0]->SetMarkerColor(kBlack);
+    phase_shift_graph[1]->SetMarkerColor(kRed);
+    phase_shift_graph[2]->SetMarkerColor(kBlue);
+
+    // for (int i = 0; i != 3; ++i)
+    // {
+    //     phase_shift_graph[i]->Fit(func_phase_shift[i]);
+    // }
+
+    TMultiGraph *phase_shift_multi = new TMultiGraph();
+
+    for (int i = 0; i != 3; ++i)
+    {
+        phase_shift_multi->Add(phase_shift_graph[i]);
+    }
+
+    TCanvas *phase_shift_canvas = new TCanvas("phase_shift_canvas", "Phase Shift", 0, 0, 800, 600);
+    phase_shift_multi->Draw("APE");
+    for (int i = 0; i != 3; ++i)
+    {
+        func_phase_shift[i]->Draw("SAME");
+        std::cout << "FUNC_ARRAY[" << i << "]\n";
+        std::cout << func_phase_shift[i]->GetParName(0) << ": " << func_phase_shift[i]->GetParameter(0) << " +- " << func_phase_shift[i]->GetParError(0) << '\n';
+        std::cout << func_phase_shift[i]->GetParName(1) << ": " << func_phase_shift[i]->GetParameter(1) << " +- " << func_phase_shift[i]->GetParError(1) << '\n';
+    }
+
+    // for (int i = 0; i != 3; ++i)
+    // {
+    //     // Double_t root_chi = std::sqrt(func_phase_shift[i]->GetChisquare() / func_phase_shift[i]->GetNDF());
+    //     func_phase_shift[i]->SetParError(0, func_phase_shift[i]->GetParError(0)); //* root_chi);
+    //     func_phase_shift[i]->SetParError(1, func_phase_shift[i]->GetParError(1)); //* root_chi);
+    // }
+
+    TFile *file_out = new TFile(("./risultati/Shift_error/V_" + std::to_string(GetVoltage()) + ".root").c_str(), "RECREATE");
+    for (int i = 0; i != 3; ++i)
+    {
+        func_phase_shift[i]->Write();
+    }
+    file_out->Close();
 }
 
 void FitError()
@@ -628,16 +836,16 @@ void rooting_rootest(Int_t input_n_blocks)
             // else
             // {
 
-                func_arr[i]->SetParameter(0, amplitude);
-                func_arr[i]->SetParameter(1, pulsation);
-                // func_arr[i]->SetParameter(2, phase);
+            func_arr[i]->SetParameter(0, amplitude);
+            func_arr[i]->SetParameter(1, pulsation);
+            // func_arr[i]->SetParameter(2, phase);
 
-                func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
-                func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
-                // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
+            func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
+            func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
+            // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
 
-                // func_arr[i]->FixParameter(0, amplitude);
-                // func_arr[i]->FixParameter(1, pulsation);
+            // func_arr[i]->FixParameter(0, amplitude);
+            // func_arr[i]->FixParameter(1, pulsation);
             // }
             // test--------------------------------------------------------------------
 
@@ -684,6 +892,41 @@ void rooting_rootest(Int_t input_n_blocks)
         {
             delete V_arr[i];
             delete func_arr[i];
+        }
+    }
+
+    // phase correction
+    TFile *phase_correction_file{new TFile(("./risultati/Shift_error/V_" + std::to_string(GetVoltage()) + ".root").c_str(), "READ")};
+    TF1 *func_phase_shift[3];
+    for (int i = 0; i != 3; ++i)
+    {
+        func_phase_shift[i] = static_cast<TF1 *>(phase_correction_file->Get(("func_phase_shift_" + std::to_string(i)).c_str()));
+    }
+
+    for (int i = 1; i != 3; ++i)
+    {
+        Double_t A_0{func_phase_shift[0]->GetParameter(0)};
+        Double_t B_0{func_phase_shift[0]->GetParameter(1)};
+        Double_t A_0_err{func_phase_shift[0]->GetParError(0)};
+        Double_t B_0_err{func_phase_shift[0]->GetParError(1)};
+
+        Double_t A{func_phase_shift[i]->GetParameter(0)};
+        Double_t B{func_phase_shift[i]->GetParameter(1)};
+        Double_t A_err{func_phase_shift[i]->GetParError(0)};
+        Double_t B_err{func_phase_shift[i]->GetParError(1)};
+
+        for (int n_block = 0; n_block != N_BLOCKS; ++n_block)
+        {
+            Double_t f{freq_arr[n_block]};
+            Double_t f_err{freq_err_arr[n_block]};
+            Double_t phase_0 = A_0 + B_0 * f;
+            Double_t phase_i = A + B * f;
+            Double_t phase_correction = phase_i - phase_0;
+            phase_arr[i][n_block] -= phase_correction;
+
+            // NOTA: SBAGLIATO, MANCA LA COVARIANZA TRA A E B
+            Double_t phase_correction_err = std::sqrt(A_0_err * A_0_err + A_err * A_err + (f_err * B_0) * (f_err * B_0) + (f_err * B) * (f_err * B) + ((B - B_0) * f_err) * ((B - B_0) * f_err));
+            phase_err_arr[i][n_block] = std::sqrt(phase_err_arr[i][n_block] * phase_err_arr[i][n_block] + phase_correction_err * phase_correction_err);
         }
     }
 
@@ -801,13 +1044,10 @@ void rooting_rootest(Int_t input_n_blocks)
     // TCanvas *phase_canvas{new TCanvas{"phase_canvas", "phase", 0, 0, 800, 600}};
     // multi_phase->Draw("ape");
 
-    
     TCanvas *result_canvas{new TCanvas{"result_canvas", "amplitude and phase", 0, 0, 1300, 700}};
-    result_canvas->Divide(2,1);
+    result_canvas->Divide(2, 1);
     result_canvas->cd(1);
     multi_ampl->Draw("ape");
     result_canvas->cd(2);
     multi_phase->Draw("ape");
-
-    
 }
