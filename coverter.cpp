@@ -4,6 +4,23 @@
 #include <string>
 #include <algorithm>
 
+int GetNPoint()
+{
+    std::ifstream settings_file{"./input_data/settings.txt"};
+    if(!settings_file.is_open())        
+        std::cout << "Failed to open settings.txt" << std::endl;
+
+    std::string input;
+    do
+    {
+        settings_file >> input;
+    } while (input != "N_samples:" && !settings_file.eof());
+
+    settings_file >> input;
+    std::cout<<"N_Points: "<<atoi(input.c_str())<<std::endl;
+    settings_file.close();
+    return atoi(input.c_str());
+}
 int main()
 {
     // clear output dir
@@ -11,7 +28,7 @@ int main()
         std::cout << "Failed to \"rm -rf ./data_root\"\n";
     if (system("mkdir ./data_root") != 0)
         std::cout << "Failed to \"rm -rf ./data_root\"\n";
-    const int N_POINTS{10'000};
+    int N_POINTS{GetNPoint()};
     std::string const vpp_error{"1.2287040E-3"};
     std::string const time_error{"50E-9"}; // from elvis specs
     std::string output_data_block_filename{"./data_root/output_data_block_"};
@@ -124,5 +141,6 @@ int main()
         file_data_block_out.close();
         file_param_out.close();
     }
+    std::cout<<"N_BLOCKS: "<<N_BLOCKS<<'\n';
     return 0;
 }
