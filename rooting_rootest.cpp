@@ -17,9 +17,11 @@
 void Style()
 {
     gStyle->SetCanvasPreferGL();
+    gStyle->SetOptFit(1111);
+    gStyle->SetOptFit(1111);
 }
 
-std::size_t const N_BLOCKS{121};
+std::size_t const N_BLOCKS{2};
 std::string output_data_block_filename{"./data_root/output_data_block_"};
 std::string output_param_filename{"./data_root/output_param_"};
 
@@ -559,6 +561,7 @@ void FastFourierTransform(int n_block, int only_Vi)
 }
 void rooting_rootest()
 {
+    Style();
     std::ifstream file_count{"./input_data/ampl_data"};
 
     Double_t const Rw{2.2032000E+02};
@@ -755,14 +758,14 @@ void rooting_rootest()
     phase_func_t->SetLineColor(kBlue);
     phase_func_w->SetLineColor(kRed);
 
-    ampl_graph[1]->Fit(ampl_func_w, "M, E");
+    ampl_graph[1]->Fit(ampl_func_w, "E");
     std::cout << std::endl;
-    ampl_graph[2]->Fit(ampl_func_t, "M, E");
+    ampl_graph[2]->Fit(ampl_func_t, "E");
     std::cout << std::endl;
 
-    phase_graph[1]->Fit(phase_func_w, "M, E");
+    phase_graph[1]->Fit(phase_func_w, "E");
     std::cout << std::endl;
-    phase_graph[2]->Fit(phase_func_t, "M, E");
+    phase_graph[2]->Fit(phase_func_t, "E");
     std::cout << std::endl;
 
     ampl_graph[0]->SetMarkerColor(kBlack);
@@ -791,9 +794,19 @@ void rooting_rootest()
         multi_phase->Add(phase_graph[i]);
     }
 
-    TCanvas *amplitude_canvas{new TCanvas{"amplitude_canvas", "amplitude", 0, 0, 800, 600}};
-    multi_ampl->Draw("ape");
+    // TCanvas *amplitude_canvas{new TCanvas{"amplitude_canvas", "amplitude", 0, 0, 800, 600}};
+    // multi_ampl->Draw("ape");
 
-    TCanvas *phase_canvas{new TCanvas{"phase_canvas", "phase", 0, 0, 800, 600}};
+    // TCanvas *phase_canvas{new TCanvas{"phase_canvas", "phase", 0, 0, 800, 600}};
+    // multi_phase->Draw("ape");
+
+    
+    TCanvas *result_canvas{new TCanvas{"result_canvas", "amplitude and phase", 0, 0, 1300, 700}};
+    result_canvas->Divide(2,1);
+    result_canvas->cd(1);
+    multi_ampl->Draw("ape");
+    result_canvas->cd(2);
     multi_phase->Draw("ape");
+
+    
 }
