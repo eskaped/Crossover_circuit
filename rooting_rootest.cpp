@@ -352,10 +352,15 @@ void FitBlock(int n_block, int only_Vi)
         new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %lg %*lg %lg %lg"},
         new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %*lg %lg %lg %lg"}};
 
+    // TF1 *func_arr[3]{
+    //     new TF1{"V_s_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"},
+    //     new TF1{"V_w_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"},
+    //     new TF1{"V_t_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"}};
+
     TF1 *func_arr[3]{
-        new TF1{"V_s_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"},
-        new TF1{"V_w_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"},
-        new TF1{"V_t_fit", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])"}};
+        new TF1{"V_s_fit", "[0]*cos([1]*x - [2]) + [3]"},
+        new TF1{"V_w_fit", "[0]*cos([1]*x - [2]) + [3]"},
+        new TF1{"V_t_fit", "[0]*cos([1]*x - [2]) + [3]"}};
 
     std::ifstream file_params_in{output_param_filename + std::to_string(n_block) + ".txt"};
     double frequency;
@@ -368,14 +373,27 @@ void FitBlock(int n_block, int only_Vi)
         double phase;
         file_params_in >> amplitude;
         file_params_in >> phase;
-
         phase = phase * TMath::Pi() / 180.; // to rad
         phase -= TMath::Pi() / 2.;          // to account for shifting in converter
 
+        func_arr[i]->SetParName(0, "amplitude");
+        func_arr[i]->SetParName(1, "pulsation");
+        func_arr[i]->SetParName(2, "phase");
+
         // amplitude = 1.2735;
-        func_arr[i]->SetParameters(amplitude, pulsation, phase, amplitude / 292, pulsation * 3, phase);
-        func_arr[i]->SetParLimits(0, func_arr[i]->GetParameter(0) - func_arr[i]->GetParameter(0) / 10, func_arr[i]->GetParameter(0) + func_arr[i]->GetParameter(0) / 10);
-        func_arr[i]->SetParLimits(3, func_arr[i]->GetParameter(3) - func_arr[i]->GetParameter(3) / 2, func_arr[i]->GetParameter(3) + func_arr[i]->GetParameter(3) / 2);
+        // func_arr[i]->SetParameters(amplitude, pulsation, phase, amplitude / 292, pulsation * 3, phase);
+        func_arr[i]->SetParameter(0, amplitude);
+        func_arr[i]->SetParameter(1, pulsation);
+        func_arr[i]->SetParameter(2, phase);
+
+        // just invented--------------------------------------------------------
+        func_arr[i]->SetParName(3, "background");
+        double background_shift = -0.0117464;
+        func_arr[i]->FixParameter(3, background_shift);
+        // just invented--------------------------------------------------------
+
+        // func_arr[i]->SetParLimits(0, func_arr[i]->GetParameter(0) - func_arr[i]->GetParameter(0) / 10, func_arr[i]->GetParameter(0) + func_arr[i]->GetParameter(0) / 10);
+        // func_arr[i]->SetParLimits(3, func_arr[i]->GetParameter(3) - func_arr[i]->GetParameter(3) / 2, func_arr[i]->GetParameter(3) + func_arr[i]->GetParameter(3) / 2);
         // func_arr[i]->FixParameter(1, pulsation);
         // func_arr[i]->FixParameter(4, pulsation*2.);
     }
@@ -397,15 +415,81 @@ void FitBlock(int n_block, int only_Vi)
     func_arr[2]->SetLineColor(TColor::GetColor(0, 0, 150));
     std::cout << "\n\nFitting of Block " << n_block << "V[<<only_Vi" << "]" << std::endl;
 
-    V_arr[only_Vi]->Fit(func_arr[only_Vi], "E, M");
+    //-----------------------------------------------------------------------------
+    //
+    TGraphErrors *cleaned_graph{new TGraphErrors(*V_arr[only_Vi])};
+    //
+    //-----------------------------------------------------------------------------
+
+    // V_arr[only_Vi]->Fit(func_arr[only_Vi], "E, M");
+    V_arr[only_Vi]->Fit(func_arr[only_Vi]);
     std::cout << "Chi ridotto:" << func_arr[only_Vi]->GetChisquare() / func_arr[only_Vi]->GetNDF() << std::endl;
+
+    // try removing the cos to see what's left behind
+    for (int n_point = 0; n_point != V_arr[only_Vi]->GetN(); ++n_point)
+    {
+        Double_t x{V_arr[only_Vi]->GetPointX(n_point)};
+        Double_t y{V_arr[only_Vi]->GetPointY(n_point) - func_arr[only_Vi]->Eval(x)};
+        cleaned_graph->SetPoint(n_point, x, y);
+    }
+
+    TF1 *cleaned_func = new TF1("cleaned_func", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5]) + [6]*cos([7]*x - [8]) + [9]*cos([10]*x - [11]) + [12]*cos([13]*x-[14])");
+    Double_t base_ampl{func_arr[only_Vi]->GetParameter(0)};
+    Double_t base_puls{func_arr[only_Vi]->GetParameter(1)};
+    Double_t base_phase{func_arr[only_Vi]->GetParameter(2)};
+
+    // from fft
+    cleaned_func->SetParameter(0, base_ampl * 27. / 62'000.);
+    cleaned_func->SetParameter(1, base_puls * 22.5 / 11.5);
+    cleaned_func->SetParameter(2, base_phase);
+    cleaned_func->SetParameter(3, base_ampl * 16. / 62'000);
+    cleaned_func->SetParameter(4, base_puls * 33.5 / 11.5);
+    cleaned_func->SetParameter(5, base_phase);
+    cleaned_func->SetParameter(6, base_ampl * 9. / 62'000);
+    cleaned_func->SetParameter(7, base_puls * 77.5 / 11.5);
+    cleaned_func->SetParameter(8, base_phase);
+    cleaned_func->SetParameter(9, base_ampl * 10.5 / 62'000);
+    cleaned_func->SetParameter(10, base_puls * 121.5 / 11.5);
+    cleaned_func->SetParameter(11, base_phase);
+    cleaned_func->SetParameter(12, base_ampl * 18. / 62'000);
+    cleaned_func->SetParameter(13, base_puls * 4900. / 11.5);
+    cleaned_func->SetParameter(14, base_phase);
+
+    cleaned_func->SetNpx(10000);
+    cleaned_func->SetNumberFitPoints(10000);
+    cleaned_func->SetLineColor(kGreen);
+    cleaned_graph->Fit(cleaned_func, "M");
+    std::cout << "Chi ridotto:" << cleaned_func->GetChisquare() / cleaned_func->GetNDF() << std::endl;
+
+    cleaned_graph->SetLineColor(kTeal);
+    cleaned_graph->SetMarkerColor(kTeal);
 
     // V_arr[only_Vi]->GetXaxis()->SetRangeUser(0.03206, 0.03215);
     // V_arr[only_Vi]->GetYaxis()->SetRangeUser(1.26, 1.28);
     // V_arr[only_Vi]->GetYaxis()
+    TMultiGraph *multigraph = new TMultiGraph();
+    multigraph->Add(V_arr[only_Vi]);
+    multigraph->Add(cleaned_graph);
+
     TCanvas *test_canva = new TCanvas("test_canva", (std::to_string(n_block) + ", [" + std::to_string(only_Vi) + "]").c_str(), 0, 0, 800, 600);
+    test_canva->Divide(2, 1);
+    test_canva->cd(1);
     test_canva->SetGridy(1);
-    V_arr[only_Vi]->Draw("APE");
+    multigraph->Draw("APE");
+
+    // fft-------------------------------------------------------------------------
+    TH1D *histo_cleaned = new TH1D("histo", "aa", cleaned_graph->GetN(), cleaned_graph->GetPointX(0), cleaned_graph->GetPointX(cleaned_graph->GetN() - 1));
+    for (int i = 1; i <= cleaned_graph->GetN(); ++i)
+    {
+        histo_cleaned->SetBinContent(i, cleaned_graph->GetPointY(i - 1));
+    }
+
+    TH1 *fft_result_histo{nullptr};
+    TVirtualFFT::SetTransform(nullptr);
+    fft_result_histo = histo_cleaned->FFT(fft_result_histo, "MAG, EX");
+
+    test_canva->cd(2);
+    fft_result_histo->Draw();
 }
 
 void PhaseShiftError(int n_blocks_input)
