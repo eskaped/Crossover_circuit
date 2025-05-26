@@ -734,7 +734,7 @@ void FitError()
                 file_params_in >> phase;
                 phase = phase * TMath::Pi() / 180.; // to rad
 
-                phase -= TMath::Pi() / 2.; // to account for shifting in converter
+                phase -= TMath::PiOver2(); // to account for shifting in converter
 
                 double pulsation = 2 * TMath::Pi() * frequency;
 
@@ -910,7 +910,7 @@ void rooting_rootest(Int_t input_n_blocks)
             file_params_in >> phase;
             phase = phase * TMath::Pi() / 180.; // to rad
 
-            phase -= TMath::Pi() / 2.; // to account for shifting in converter
+            phase -= TMath::PiOver2(); // to account for shifting in converter
 
             double pulsation = 2 * TMath::Pi() * frequency;
 
