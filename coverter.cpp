@@ -3,11 +3,32 @@
 #include <iomanip>
 #include <string>
 #include <algorithm>
+#include <cmath>
+#include <vector>
+
+#define MAX_N_BLOCKS 1000
+int GetVpp()
+{
+    std::ifstream settings_file{"./input_data/settings.txt"};
+    if (!settings_file.is_open())
+        std::cout << "Failed to open settings.txt" << std::endl;
+
+    std::string input;
+    do
+    {
+        settings_file >> input;
+    } while (input != "vpp:" && !settings_file.eof());
+
+    settings_file >> input;
+    std::cout << "vpp: " << atoi(input.c_str()) << std::endl;
+    settings_file.close();
+    return atoi(input.c_str());
+}
 
 int GetNPoint()
 {
     std::ifstream settings_file{"./input_data/settings.txt"};
-    if(!settings_file.is_open())        
+    if (!settings_file.is_open())
         std::cout << "Failed to open settings.txt" << std::endl;
 
     std::string input;
@@ -17,7 +38,7 @@ int GetNPoint()
     } while (input != "N_samples:" && !settings_file.eof());
 
     settings_file >> input;
-    std::cout<<"N_Points: "<<atoi(input.c_str())<<std::endl;
+    std::cout << "N_Points: " << atoi(input.c_str()) << std::endl;
     settings_file.close();
     return atoi(input.c_str());
 }
@@ -29,7 +50,52 @@ int main()
     if (system("mkdir ./data_root") != 0)
         std::cout << "Failed to \"rm -rf ./data_root\"\n";
     int N_POINTS{GetNPoint()};
-    std::string const vpp_error{"1.2287040E-3"};
+    double const vpp_error_elvis{1.2287040E-3};
+
+    //[0][i] : frequency at which the rms in [1][i] was calculated
+    //[1][i] : RMS calculated at the freq in [0][i]
+    double vpp_err_freq_RMS_arr[2][MAX_N_BLOCKS];
+    std::ifstream vpp_err_freq_rms_filein{"./risultati/Background_error/V_" + std::to_string(GetVpp()) + "_Freq_RMS.txt"};
+    if (!vpp_err_freq_rms_filein.is_open())
+    {
+        std::cout << "Failed to open vpp_err_freq_rms_filein" << std::endl;
+        return 0;
+    }
+    int N_VPP_ERR_FREQ_RMS = 0;
+    while (!vpp_err_freq_rms_filein.eof())
+    {
+        vpp_err_freq_rms_filein >> vpp_err_freq_RMS_arr[0][N_VPP_ERR_FREQ_RMS];
+        vpp_err_freq_rms_filein >> vpp_err_freq_RMS_arr[1][N_VPP_ERR_FREQ_RMS];
+        // std::cout << vpp_err_freq_RMS_arr[0][N_VPP_ERR_FREQ_RMS] << '\t' << vpp_err_freq_RMS_arr[1][N_VPP_ERR_FREQ_RMS] << '\n';
+
+        ++N_VPP_ERR_FREQ_RMS;
+    }
+    // std::cout << N_VPP_ERR_FREQ_RMS << '\n';
+
+    // return 0;
+
+    // // note:
+    // // we took the error from block 0 - AI0 for each dataset without the circuit
+    // //(a frequenze più alte sembra diventare più piccolo, abbiamo preso il circa max)
+    // //  0: 5V           0.00215797
+    // //  1: 7.5V (7)     0.00301076
+    // //  2: 10V          0.00408209
+    // double const vpp_background_error_arr[3]{
+    //     0,     //  0: 5V
+    //     0,     //  1: 7.5V (7)
+    //     0      //  2: 10V
+    // };
+
+    // // terribile ma stfu
+    // double vpp_background_error;
+    // if (VPP == 5)
+    //     vpp_background_error = vpp_background_error_arr[0];
+    // else if (VPP == 7)
+    //     vpp_background_error = vpp_background_error_arr[1];
+    // else // (VPP == 10)
+    //     vpp_background_error = vpp_background_error_arr[2];
+
+    // std::string vpp_error{std::to_string(std::sqrt(vpp_error_elvis * vpp_error_elvis + vpp_background_error * vpp_background_error))};
     std::string const time_error{"50E-9"}; // from elvis specs
     std::string output_data_block_filename{"./data_root/output_data_block_"};
     std::string output_param_filename{"./data_root/output_param_"};
@@ -37,25 +103,25 @@ int main()
     // counting how many blocks of data we have
     // copied from https://stackoverflow.com/questions/3072795/how-to-count-lines-of-a-file-in-c
     std::ifstream file_count{"./input_data/ampl_data"};
-    if(!file_count.is_open())
-        std::cout<<"Failed to open ampl_data"<<std::endl;
-    
-    std::cout<<"started n_blocks count"<<std::endl;
+    if (!file_count.is_open())
+        std::cout << "Failed to open ampl_data" << std::endl;
+
+    std::cout << "started n_blocks count" << std::endl;
     long int N_BLOCKS{std::count(std::istreambuf_iterator<char>(file_count),
                                  std::istreambuf_iterator<char>(), '\n') -
                       1};
     file_count.close();
-    std::cout<<"N_BLOCKS: "<<N_BLOCKS<<std::endl;
+    std::cout << "N_BLOCKS: " << N_BLOCKS << std::endl;
 
     std::ifstream file_sweep_in{"./input_data/sweep_data"};
-    if(!file_sweep_in.is_open())
-        std::cout<<"Failed to open sweep_data"<<std::endl;
+    if (!file_sweep_in.is_open())
+        std::cout << "Failed to open sweep_data" << std::endl;
     std::ifstream file_ampl_in{"./input_data/ampl_data"};
-    if(!file_ampl_in.is_open())
-        std::cout<<"Failed to open ampl_data"<<std::endl;
+    if (!file_ampl_in.is_open())
+        std::cout << "Failed to open ampl_data" << std::endl;
     std::ifstream file_phase_in{"./input_data/phase_data"};
-    if(!file_phase_in.is_open())
-        std::cout<<"Failed to open phase_data"<<std::endl;
+    if (!file_phase_in.is_open())
+        std::cout << "Failed to open phase_data" << std::endl;
 
     // skip first row (intestazione)
     char garbage = ' ';
@@ -88,6 +154,18 @@ int main()
         double initial_minutes = std::stod(initial_time.substr(3, 2));
         double initial_seconds = std::stod(initial_time.substr(6)) + initial_minutes * 60.;
 
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         file_data_block_out << std::setprecision(10) << 0. << '\t' << initial_V_s << '\t' << initial_V_w << '\t' << initial_V_t << '\t' << time_error << '\t' << vpp_error << '\n';
         for (int i = 1; i != N_POINTS; ++i)
         {
@@ -106,7 +184,13 @@ int main()
             double minutes = std::stod(time.substr(3, 2));
             double seconds = std::stod(time.substr(6)) + minutes * 60. - initial_seconds;
 
-            file_data_block_out << std::setprecision(10) << seconds << '\t' << V_s << '\t' << V_w << '\t' << V_t << '\t' << time_error << '\t' << vpp_error << '\n';
+            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+             file_data_block_out << std::setprecision(10) << seconds << '\t' << V_s << '\t' << V_w << '\t' << V_t << '\t' << time_error << '\t' << vpp_error << '\n';
         }
 
         // get param
@@ -137,10 +221,10 @@ int main()
         file_phase_in >> phase;
         file_param_out << std::setprecision(10) << amplitude << '\t' << phase << '\n';
 
-        std::cout<<"Done BLOCK "<<block_n<<'\n';
+        std::cout << "Done BLOCK " << block_n << '\n';
         file_data_block_out.close();
         file_param_out.close();
     }
-    std::cout<<"N_BLOCKS: "<<N_BLOCKS<<'\n';
+    std::cout << "N_BLOCKS: " << N_BLOCKS << '\n';
     return 0;
 }
