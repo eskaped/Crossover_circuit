@@ -82,6 +82,26 @@ Double_t ampl_woofer(Double_t *f, Double_t *par)
     return (Vs * Rw) / sqrt((Rl + Rw) * (Rl + Rw) + (w * L) * (w * L));
 }
 
+Double_t ampl_woofer_2(Double_t *f, Double_t *par)
+{
+    Double_t w{TMath::TwoPi() * f[0]};
+    Double_t Vs{ampl_graph[0]->Eval(f[0])};
+    // clamp limits
+    if (f[0] < ampl_graph[0]->GetPointX(0))
+        Vs = ampl_graph[0]->GetPointY(0);
+    else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
+        Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+
+    Double_t Rw{par[0]};
+    Double_t Rl{par[1]};
+    Double_t L{par[2]};
+    Double_t Cl{par[3]};
+    Double_t A{Rw / ((1 - w * w * L * Cl) * (1 - w * w * L * Cl) + (Rl * w * Cl) * (Rl * w * Cl))};
+    Double_t B{Rw * Rl - 2 * Rw * w * w * L * Cl + Rw * (w * w * L * Cl) * (w * w * L * Cl) + Rw * (Rl * w * Cl) * (Rl * w * Cl)};
+    Double_t C{w * L - w * w * w * L * L * Cl - Rl * Rl * w * Cl};
+    return Vs * A * sqrt(A * A + B * B);
+}
+
 Double_t ampl_tweeter(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
@@ -1135,7 +1155,7 @@ void rooting_rootest(Int_t input_n_blocks)
 
     // fitting
 
-    TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer, 0., 1000., 3}};
+    TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer_2, 0., 1000., 4}};
     TF1 *ampl_func_t{new TF1{"ampl_func_t", ampl_tweeter, 0., 1000., 3}};
     TF1 *phase_func_w{new TF1{"phase_func_w", phase_woofer, 0., 1000., 3}};
     TF1 *phase_func_t{new TF1{"phase_func_t", phase_tweeter, 0., 1000., 3}};
@@ -1143,6 +1163,7 @@ void rooting_rootest(Int_t input_n_blocks)
     ampl_func_w->SetParName(0, "Rw");
     ampl_func_w->SetParName(1, "Rl");
     ampl_func_w->SetParName(2, "L");
+    ampl_func_w->SetParName(3, "Cl");
 
     ampl_func_t->SetParName(0, "Rt");
     ampl_func_t->SetParName(1, "Rl1Rl2");
@@ -1159,6 +1180,7 @@ void rooting_rootest(Int_t input_n_blocks)
     ampl_func_w->SetParameter(0, Rw);
     ampl_func_w->SetParameter(1, Rl);
     ampl_func_w->SetParameter(2, L);
+    ampl_func_w->SetParameter(3, 9.72E-5);
 
     ampl_func_t->SetParameter(0, Rl);
     ampl_func_t->SetParameter(1, Rl1Rl2);
