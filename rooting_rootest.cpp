@@ -96,10 +96,10 @@ Double_t ampl_woofer_2(Double_t *f, Double_t *par)
     Double_t Rl{par[1]};
     Double_t L{par[2]};
     Double_t Cl{par[3]};
-    Double_t A{Rw / ((1 - w * w * L * Cl) * (1 - w * w * L * Cl) + (Rl * w * Cl) * (Rl * w * Cl))};
-    Double_t B{Rw * Rl - 2 * Rw * w * w * L * Cl + Rw * (w * w * L * Cl) * (w * w * L * Cl) + Rw * (Rl * w * Cl) * (Rl * w * Cl)};
-    Double_t C{w * L - w * w * w * L * L * Cl - Rl * Rl * w * Cl};
-    return Vs * A * sqrt(A * A + B * B);
+    Double_t Num{(1 - w * w * L * Cl) * (1 - w * w * L * Cl) + (Rl * w * Cl) * (Rl * w * Cl)};
+    Double_t Den_A{Rw + Rl - 2 * Rw * w * w * L * Cl + Rw * (w * w * L * Cl) * (w * w * L * Cl) + Rw * (Rl * w * Cl) * (Rl * w * Cl)};
+    Double_t Den_B{w * L - w * w * w * L * L * Cl - Rl * Rl * w * Cl};
+    return Vs * Rw * Num / sqrt(Den_A * Den_A + Den_B * Den_B);
 }
 
 Double_t ampl_tweeter(Double_t *f, Double_t *par)
@@ -1180,7 +1180,7 @@ void rooting_rootest(Int_t input_n_blocks)
     ampl_func_w->SetParameter(0, Rw);
     ampl_func_w->SetParameter(1, Rl);
     ampl_func_w->SetParameter(2, L);
-    ampl_func_w->SetParameter(3, 9.72E-5);
+    ampl_func_w->SetParameter(3, 1E-9);
 
     ampl_func_t->SetParameter(0, Rl);
     ampl_func_t->SetParameter(1, Rl1Rl2);

@@ -42,6 +42,12 @@ int GetNPoint()
     settings_file.close();
     return atoi(input.c_str());
 }
+
+double GetError(double frequency, double vpp_error_elvis, double vpp_err_freq_RMS_arr[2][MAX_N_BLOCKS])
+{
+return 0.;
+}
+
 int main()
 {
     // clear output dir
@@ -96,6 +102,7 @@ int main()
     //     vpp_background_error = vpp_background_error_arr[2];
 
     // std::string vpp_error{std::to_string(std::sqrt(vpp_error_elvis * vpp_error_elvis + vpp_background_error * vpp_background_error))};
+    std::string vpp_error{"1.2287040E-3"};
     std::string const time_error{"50E-9"}; // from elvis specs
     std::string output_data_block_filename{"./data_root/output_data_block_"};
     std::string output_param_filename{"./data_root/output_param_"};
