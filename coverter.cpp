@@ -43,9 +43,35 @@ int GetNPoint()
     return atoi(input.c_str());
 }
 
-double GetError(double frequency, double vpp_error_elvis, double vpp_err_freq_RMS_arr[2][MAX_N_BLOCKS])
+double GetError(double frequency, double vpp_error_elvis, double vpp_err_freq_RMS_arr[2][MAX_N_BLOCKS], int N_VPP_ERR_FREQ_RMS)
 {
-return 0.;
+    int closest_higher_freq_index = 0;
+    while (closest_higher_freq_index < N_VPP_ERR_FREQ_RMS)
+    {
+        if (vpp_err_freq_RMS_arr[0][closest_higher_freq_index] >= frequency)
+        {
+            break;
+        }
+        ++closest_higher_freq_index;
+    }
+
+    // freq > of every freq we have data of
+    if (closest_higher_freq_index == N_VPP_ERR_FREQ_RMS)
+        return std::sqrt(vpp_error_elvis * vpp_error_elvis + vpp_err_freq_RMS_arr[1][closest_higher_freq_index - 1] * vpp_err_freq_RMS_arr[1][closest_higher_freq_index - 1]);
+
+    // freq < of every freq we have data of
+    if (closest_higher_freq_index == 0)
+        return std::sqrt(vpp_error_elvis * vpp_error_elvis + vpp_err_freq_RMS_arr[1][closest_higher_freq_index] * vpp_err_freq_RMS_arr[1][closest_higher_freq_index]);
+
+    // Linear Interpolation
+    int closest_lower_freq_index = closest_higher_freq_index - 1;
+    double RMS_m = vpp_err_freq_RMS_arr[1][closest_lower_freq_index];
+    double RMS_M = vpp_err_freq_RMS_arr[1][closest_higher_freq_index];
+    double freq_m = vpp_err_freq_RMS_arr[0][closest_lower_freq_index];
+    double freq_M = vpp_err_freq_RMS_arr[0][closest_higher_freq_index];
+
+    double RMS_interp = RMS_m + ((RMS_M - RMS_m) / (freq_M - freq_m)) * (frequency - freq_m);
+    return std::sqrt(RMS_interp * RMS_interp + vpp_error_elvis * vpp_error_elvis);
 }
 
 int main()
@@ -145,61 +171,6 @@ int main()
         std::ofstream file_data_block_out{output_data_block_filename + std::to_string(block_n) + ".txt", std::ios::out | std::ios::trunc};
         std::ofstream file_param_out{output_param_filename + std::to_string(block_n) + ".txt", std::ios::out | std::ios::trunc};
 
-        // first read outside the loop to get initial time
-        std::string initial_time;
-        std::string initial_V_s;
-        std::string initial_V_w;
-        std::string initial_V_t;
-
-        file_sweep_in >> initial_time; // data che ignoriamoi
-        file_sweep_in >> initial_time; // orario
-        file_sweep_in >> initial_V_s;  // V_s
-        file_sweep_in >> initial_V_w;  // V_w
-        file_sweep_in >> initial_V_t;  // V_t
-
-        // togli ora
-        double initial_minutes = std::stod(initial_time.substr(3, 2));
-        double initial_seconds = std::stod(initial_time.substr(6)) + initial_minutes * 60.;
-
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        file_data_block_out << std::setprecision(10) << 0. << '\t' << initial_V_s << '\t' << initial_V_w << '\t' << initial_V_t << '\t' << time_error << '\t' << vpp_error << '\n';
-        for (int i = 1; i != N_POINTS; ++i)
-        {
-            std::string time;
-            std::string V_s;
-            std::string V_w;
-            std::string V_t;
-
-            file_sweep_in >> time; // data che ignoriamoi
-            file_sweep_in >> time; // orario
-            file_sweep_in >> V_s;  // V_s
-            file_sweep_in >> V_w;  // V_w
-            file_sweep_in >> V_t;  // V_t
-
-            // togli ora
-            double minutes = std::stod(time.substr(3, 2));
-            double seconds = std::stod(time.substr(6)) + minutes * 60. - initial_seconds;
-
-            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            // UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-             file_data_block_out << std::setprecision(10) << seconds << '\t' << V_s << '\t' << V_w << '\t' << V_t << '\t' << time_error << '\t' << vpp_error << '\n';
-        }
-
         // get param
         // freq V_s_ampl V_s_phase V_w_ampl V_w_phase V_t_ampl V_t_phase
         std::string frequency;
@@ -208,6 +179,7 @@ int main()
 
         // V_s
         file_ampl_in >> frequency;
+        double VS_frequency{std::stod(frequency)};
         file_phase_in >> frequency;
         file_ampl_in >> amplitude;
         file_phase_in >> phase;
@@ -227,6 +199,45 @@ int main()
         file_ampl_in >> amplitude;
         file_phase_in >> phase;
         file_param_out << std::setprecision(10) << amplitude << '\t' << phase << '\n';
+
+        // sweep data---------------------------------------
+
+        // first read outside the loop to get initial time
+        std::string initial_time;
+        std::string initial_V_s;
+        std::string initial_V_w;
+        std::string initial_V_t;
+
+        file_sweep_in >> initial_time; // data che ignoriamoi
+        file_sweep_in >> initial_time; // orario
+        file_sweep_in >> initial_V_s;  // V_s
+        file_sweep_in >> initial_V_w;  // V_w
+        file_sweep_in >> initial_V_t;  // V_t
+
+        // togli ora
+        double initial_minutes = std::stod(initial_time.substr(3, 2));
+        double initial_seconds = std::stod(initial_time.substr(6)) + initial_minutes * 60.;
+
+        file_data_block_out << std::setprecision(10) << 0. << '\t' << initial_V_s << '\t' << initial_V_w << '\t' << initial_V_t << '\t' << time_error << '\t' << std::to_string(GetError(VS_frequency, vpp_error_elvis, vpp_err_freq_RMS_arr, N_VPP_ERR_FREQ_RMS)) << '\n';
+        for (int i = 1; i != N_POINTS; ++i)
+        {
+            std::string time;
+            std::string V_s;
+            std::string V_w;
+            std::string V_t;
+
+            file_sweep_in >> time; // data che ignoriamoi
+            file_sweep_in >> time; // orario
+            file_sweep_in >> V_s;  // V_s
+            file_sweep_in >> V_w;  // V_w
+            file_sweep_in >> V_t;  // V_t
+
+            // togli ora
+            double minutes = std::stod(time.substr(3, 2));
+            double seconds = std::stod(time.substr(6)) + minutes * 60. - initial_seconds;
+
+            file_data_block_out << std::setprecision(10) << seconds << '\t' << V_s << '\t' << V_w << '\t' << V_t << '\t' << time_error << '\t' << std::to_string(GetError(VS_frequency, vpp_error_elvis, vpp_err_freq_RMS_arr, N_VPP_ERR_FREQ_RMS)) << '\n';
+        }
 
         std::cout << "Done BLOCK " << block_n << '\n';
         file_data_block_out.close();

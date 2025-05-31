@@ -9,6 +9,8 @@
 #include "TColor.h"
 #include "TStyle.h"
 #include "TVirtualFFT.h"
+#include "Math/MinimizerOptions.h"
+#include "Math/Minimizer.h"
 #include "TH1D.h"
 #include "TFile.h"
 #include <fstream>
@@ -1018,9 +1020,9 @@ void rooting_rootest(Int_t input_n_blocks)
             new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %*lg %lg %lg %lg"}};
 
         TF1 *func_arr[3]{
-            new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
-            new TF1{"V_w_fit", "[0]*cos([1]*x - [2])"},
-            new TF1{"V_t_fit", "[0]*cos([1]*x - [2])"}};
+            new TF1{"V_s_fit", "[0]*cos([1]*x - [2]) + [3]"},
+            new TF1{"V_w_fit", "[0]*cos([1]*x - [2]) + [3]"},
+            new TF1{"V_t_fit", "[0]*cos([1]*x - [2]) + [3]"}};
 
         // TF1 *func_arr[3]{
         //     new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
@@ -1030,10 +1032,11 @@ void rooting_rootest(Int_t input_n_blocks)
         std::ifstream file_params_in{output_param_filename + std::to_string(n_block) + ".txt"};
         double frequency;
         file_params_in >> frequency;
-
         // set parameters
         for (int i = 0; i != 3; ++i)
         {
+            double background = -0.001;
+
             double amplitude;
             double phase;
             file_params_in >> amplitude;
@@ -1053,6 +1056,7 @@ void rooting_rootest(Int_t input_n_blocks)
             func_arr[i]->SetParameter(0, amplitude);
             func_arr[i]->SetParameter(1, pulsation);
             // func_arr[i]->SetParameter(2, phase);
+            func_arr[i]->SetParameter(3, background);
 
             func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
             func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
@@ -1160,6 +1164,15 @@ void rooting_rootest(Int_t input_n_blocks)
     TF1 *phase_func_w{new TF1{"phase_func_w", phase_woofer, 0., 1000., 3}};
     TF1 *phase_func_t{new TF1{"phase_func_t", phase_tweeter, 0., 1000., 3}};
 
+    ampl_func_w->SetNpx(100000);
+    ampl_func_w->SetNumberFitPoints(100000);
+    ampl_func_t->SetNpx(100000);
+    ampl_func_t->SetNumberFitPoints(100000);
+    phase_func_w->SetNpx(100000);
+    phase_func_w->SetNumberFitPoints(100000);
+    phase_func_t->SetNpx(100000);
+    phase_func_t->SetNumberFitPoints(100000);
+
     ampl_func_w->SetParName(0, "Rw");
     ampl_func_w->SetParName(1, "Rl");
     ampl_func_w->SetParName(2, "L");
@@ -1180,7 +1193,7 @@ void rooting_rootest(Int_t input_n_blocks)
     ampl_func_w->SetParameter(0, Rw);
     ampl_func_w->SetParameter(1, Rl);
     ampl_func_w->SetParameter(2, L);
-    ampl_func_w->SetParameter(3, 1E-9);
+    ampl_func_w->SetParameter(3, 1E-8);
 
     ampl_func_t->SetParameter(0, Rl);
     ampl_func_t->SetParameter(1, Rl1Rl2);
@@ -1195,21 +1208,24 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_t->SetParameter(2, C1C2);
 
     // PAR LIMITS-----------------------------------------------------------------
-    ampl_func_w->SetParLimits(0, Rw - Rw_err, Rw + Rw_err);
-    ampl_func_w->SetParLimits(1, Rl - Rl_err, Rl + Rl_err);
-    ampl_func_w->SetParLimits(2, L - L_err, L + L_err);
+    double N_SIGMA = 3;
+    // ampl_func_w->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    // ampl_func_w->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    // ampl_func_w->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
+    // ampl_func_w->SetParLimits(3, 0, 1E-6);
+    ampl_func_w->FixParameter(3, 0);
 
-    ampl_func_t->SetParLimits(0, Rt - Rt_err, Rt + Rt_err);
-    ampl_func_t->SetParLimits(1, Rl1Rl2 - Rl1Rl2_err, Rl1Rl2 + Rl1Rl2_err);
-    ampl_func_t->SetParLimits(2, C1C2 - C1C2_err, C1C2 + C1C2_err);
+    // ampl_func_t->SetParLimits(0, Rt - Rt_err, Rt + Rt_err);
+    // ampl_func_t->SetParLimits(1, Rl1Rl2 - Rl1Rl2_err, Rl1Rl2 + Rl1Rl2_err);
+    // ampl_func_t->SetParLimits(2, C1C2 - C1C2_err, C1C2 + C1C2_err);
 
-    phase_func_w->SetParLimits(0, Rw - Rw_err, Rw + Rw_err);
-    phase_func_w->SetParLimits(1, Rl - Rl_err, Rl + Rl_err);
-    phase_func_w->SetParLimits(2, L - L_err, L + L_err);
+    // phase_func_w->SetParLimits(0, Rw - Rw_err, Rw + Rw_err);
+    // phase_func_w->SetParLimits(1, Rl - Rl_err, Rl + Rl_err);
+    // phase_func_w->SetParLimits(2, L - L_err, L + L_err);
 
-    phase_func_t->SetParLimits(0, Rt - Rt_err, Rt + Rt_err);
-    phase_func_t->SetParLimits(1, Rl1Rl2 - Rl1Rl2_err, Rl1Rl2 + Rl1Rl2_err);
-    phase_func_t->SetParLimits(2, C1C2 - C1C2_err, C1C2 + C1C2_err);
+    // phase_func_t->SetParLimits(0, Rt - Rt_err, Rt + Rt_err);
+    // phase_func_t->SetParLimits(1, Rl1Rl2 - Rl1Rl2_err, Rl1Rl2 + Rl1Rl2_err);
+    // phase_func_t->SetParLimits(2, C1C2 - C1C2_err, C1C2 + C1C2_err);
 
     // GRAPHICS-----------------------------------------------
     ampl_func_t->SetLineColor(kBlue);
@@ -1218,15 +1234,18 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_t->SetLineColor(kBlue);
     phase_func_w->SetLineColor(kRed);
 
-    ampl_graph[1]->Fit(ampl_func_w, "M, E");
-    std::cout << std::endl;
-    ampl_graph[2]->Fit(ampl_func_t, "M, E");
-    std::cout << std::endl;
+    // ROOT::Math::MinimizerOptions::SetDefaultStrategy(2);
+    // ROOT::Math::MinimizerOptions::SetDefaultMaxFunctionCalls(1000000);
 
-    phase_graph[1]->Fit(phase_func_w, "M, E");
+    ampl_graph[1]->Fit(ampl_func_w, "V, E");
     std::cout << std::endl;
-    phase_graph[2]->Fit(phase_func_t, "M, E");
-    std::cout << std::endl;
+    // ampl_graph[2]->Fit(ampl_func_t, "M, E");
+    // std::cout << std::endl;
+
+    // phase_graph[1]->Fit(phase_func_w, "M, E");
+    // std::cout << std::endl;
+    // phase_graph[2]->Fit(phase_func_t, "M, E");
+    // std::cout << std::endl;
 
     ampl_graph[0]->SetName("V Elvis");
     ampl_graph[1]->SetName("V Woofer");
@@ -1254,7 +1273,7 @@ void rooting_rootest(Int_t input_n_blocks)
 
     auto multi_ampl{new TMultiGraph};
     auto multi_phase{new TMultiGraph};
-    for (int i = 0; i != 3; ++i)
+    for (int i = 1; i != 3; ++i)
     {
         multi_ampl->Add(ampl_graph[i]);
         std::cout << std::endl;
