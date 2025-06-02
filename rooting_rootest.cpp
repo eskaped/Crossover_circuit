@@ -8,6 +8,8 @@
 #include "TMath.h"
 #include "TColor.h"
 #include "TStyle.h"
+#include "TLegend.h"
+#include "TPaveText.h"
 #include "TVirtualFFT.h"
 #include "Math/MinimizerOptions.h"
 #include "Math/Minimizer.h"
@@ -17,6 +19,18 @@
 #include <algorithm>
 #include <iomanip>
 #include <string>
+#include <format>
+
+// da https://stackoverflow.com/questions/16605967/set-precision-of-stdto-string-when-converting-floating-point-values
+#include <sstream>
+template <typename T>
+std::string to_string_with_precision(const T a_value, const int n = 6)
+{
+    std::ostringstream out;
+    out.precision(n);
+    out << std::fixed << a_value;
+    return std::move(out).str();
+}
 
 // returns the voltage read from settings.txt
 int GetVoltage()
@@ -36,11 +50,159 @@ int GetVoltage()
     settings_file.close();
     return atoi(input.c_str());
 }
+
+std::string GetSweepRange()
+{
+
+    std::ifstream settings_file{"./input_data/settings.txt"};
+    if (!settings_file.is_open())
+        std::cout << "Failed to open settings.txt" << std::endl;
+
+    std::string input;
+    do
+    {
+        settings_file >> input;
+    } while (input != "min:" && !settings_file.eof());
+
+    settings_file >> input;
+    int min_freq = atoi(input.c_str());
+    std::cout << "min: " << min_freq << "Hz\n";
+    settings_file.close();
+    std::string output;
+    switch (min_freq)
+    {
+    case 10:
+        output = "bassi";
+        break;
+    case 300:
+        output = "medi";
+        break;
+    case 900:
+        output = "alti";
+        break;
+    case 2000:
+        output = "altissimi";
+        break;
+    case 575:
+    case 593:
+    case 580:
+        output = "crossover";
+    default:
+        output = "altri";
+        break;
+    }
+
+    return output;
+}
+
+std::string NumErrScien(double x, double x_err, std::string name_par)
+{
+    std::string x_err_str = to_string_with_precision(x_err, 15); // s == "1e+05"
+    if (x_err_str.find('.') == x_err_str.npos)
+        x_err_str += ".0";
+    int n_first_non_zero_digit = 0;
+    while (n_first_non_zero_digit != x_err_str.size())
+    {
+        if (x_err_str[n_first_non_zero_digit] != '0' && x_err_str[n_first_non_zero_digit] != '.')
+            break;
+        ++n_first_non_zero_digit;
+    }
+    int dot_position = x_err_str.find('.');
+    int exp = n_first_non_zero_digit - dot_position;
+    if (exp < 0)
+        ++exp;
+
+    x_err = x_err * std::pow(10, exp);
+    x = x * std::pow(10, exp);
+
+    std::string x_str = to_string_with_precision(x, 15);
+    if (x_str.find('.') == x_str.npos)
+        x_str += ".0";
+    x_err_str = to_string_with_precision(x_err, 15);
+    if (x_err_str.find('.') == x_err_str.npos)
+        x_err_str += ".0";
+    x_str = x_str.substr(0, x_str.find('.') + 2);
+    x_err_str = x_err_str.substr(0, 3);
+
+    exp *= -1;
+    std::string um_str; // unità di misura
+    switch (name_par[0])
+    {
+    case 'R':
+        um_str = "#Omega"; // ohm
+        break;
+    case 'L':
+        um_str = "H"; // henry
+        break;
+    case 'C':
+        um_str = "F"; // farad
+        break;
+    default:
+        um_str = "";
+        break;
+    }
+
+    std::string um_prefix_str = "";
+    if (um_str != "" && exp >= -12 && exp <= 12)
+    {
+        int prefix = 0;
+        while (exp <= -3)
+        {
+            exp += 3;
+            --prefix;
+        }
+        while (exp >= 3)
+        {
+            exp -= 3;
+            ++prefix;
+        }
+        switch (prefix)
+        {
+        case 4:
+            um_prefix_str = "T";
+            break;
+        case 3:
+            um_prefix_str = "G";
+            break;
+        case 2:
+            um_prefix_str = "M";
+            break;
+        case 1:
+            um_prefix_str = "k";
+            break;
+        case 0:
+            um_prefix_str = "";
+            break;
+        case -1:
+            um_prefix_str = "m"; // milli
+            break;
+        case -2:
+            um_prefix_str = "#mu"; // micro
+            break;
+        case -3:
+            um_prefix_str = "n"; // nano
+            break;
+        case -4:
+            um_prefix_str = "p";
+            break;
+        }
+    }
+
+    std::string return_str = "(" + x_str + " #pm " + x_err_str + ")";
+    if (exp != 0)
+        return_str += "E" + std::to_string(exp);
+    return return_str + um_prefix_str + um_str;
+}
+
 void SamuStyle()
 {
     gStyle->SetCanvasPreferGL();
-    gStyle->SetOptFit(1111);
-    gStyle->SetOptStat(1);
+    // gStyle->SetOptFit(1111);
+    gStyle->SetOptStat(0);
+    // gStyle->SetStatFont(13);
+    // gStyle->SetTextFont(13);
+    // gStyle->SetTitleFont(13);
+    // gStyle->SetLegendFont(13);
 }
 
 Int_t N_BLOCKS{461};
@@ -104,6 +266,25 @@ Double_t ampl_woofer_2(Double_t *f, Double_t *par)
     return Vs * Rw * Num / sqrt(Den_A * Den_A + Den_B * Den_B);
 }
 
+Double_t ampl_woofer_3(Double_t *f, Double_t *par)
+{
+    Double_t w{TMath::TwoPi() * f[0]};
+    Double_t Vs{ampl_graph[0]->Eval(f[0])};
+    // clamp limits
+    if (f[0] < ampl_graph[0]->GetPointX(0))
+        Vs = ampl_graph[0]->GetPointY(0);
+    else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
+        Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+
+    Double_t Rw{par[0]};
+    Double_t Rl{par[1]};
+    Double_t L{par[2]};
+    Double_t Cl{par[3]};
+    Double_t Den_A{Rw + Rl};
+    Double_t Den_B{(w * L) / (1 - w * w * L * Cl)};
+    return Vs * Rw / sqrt(Den_A * Den_A + Den_B * Den_B);
+}
+
 Double_t ampl_tweeter(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
@@ -122,33 +303,71 @@ Double_t ampl_tweeter(Double_t *f, Double_t *par)
 Double_t phase_woofer(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
-    Double_t phase_s{phase_graph[0]->Eval(f[0])};
-    // clamp limits
-    if (f[0] < phase_graph[0]->GetPointX(0))
-        phase_s = phase_graph[0]->GetPointY(0);
-    else if (f[0] > phase_graph[0]->GetPointX(phase_graph[0]->GetN() - 1))
-        phase_s = phase_graph[0]->GetPointY(phase_graph[0]->GetN() - 1);
+    // Double_t phase_s{phase_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < phase_graph[0]->GetPointX(0))
+    //     phase_s = phase_graph[0]->GetPointY(0);
+    // else if (f[0] > phase_graph[0]->GetPointX(phase_graph[0]->GetN() - 1))
+    //     phase_s = phase_graph[0]->GetPointY(phase_graph[0]->GetN() - 1);
 
     Double_t Rw{par[0]};
     Double_t Rl{par[1]};
     Double_t L{par[2]};
-    return (+phase_s + std::atan(w * L / (Rl + Rw)));
+    return (std::atan(w * L / (Rl + Rw)));
+}
+
+Double_t phase_woofer_2(Double_t *f, Double_t *par)
+{
+    Double_t w{TMath::TwoPi() * f[0]};
+    // Double_t phase_s{phase_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < phase_graph[0]->GetPointX(0))
+    //     phase_s = phase_graph[0]->GetPointY(0);
+    // else if (f[0] > phase_graph[0]->GetPointX(phase_graph[0]->GetN() - 1))
+    //     phase_s = phase_graph[0]->GetPointY(phase_graph[0]->GetN() - 1);
+
+    Double_t Rw{par[0]};
+    Double_t Rl{par[1]};
+    Double_t L{par[2]};
+    Double_t Cl{par[3]};
+    Double_t Num{w * L - w * w * w * L * L * Cl - Rl * Rl * w * Cl};
+    Double_t Den{(Rw + Rl - Rw * w * w * L * Cl) * (1 - w * w * L * Cl) + (w * L + Rl * Rw * w * Cl) * (Rl * w * Cl)};
+    return (std::atan(Num / Den));
+}
+
+Double_t phase_woofer_3(Double_t *f, Double_t *par)
+{
+    Double_t w{TMath::TwoPi() * f[0]};
+    // Double_t phase_s{phase_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < phase_graph[0]->GetPointX(0))
+    //     phase_s = phase_graph[0]->GetPointY(0);
+    // else if (f[0] > phase_graph[0]->GetPointX(phase_graph[0]->GetN() - 1))
+    //     phase_s = phase_graph[0]->GetPointY(phase_graph[0]->GetN() - 1);
+
+    Double_t Rw{par[0]};
+    Double_t Rl{par[1]};
+    Double_t L{par[2]};
+    Double_t Cl{par[3]};
+    Double_t Num{-w * L / (1 - w * w * L * Cl)};
+    Double_t Den{Rw + Rl};
+    return (std::atan(Num / Den));
 }
 
 Double_t phase_tweeter(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
-    Double_t phase_s{phase_graph[0]->Eval(f[0])};
-    // clamp limits
-    if (f[0] < phase_graph[0]->GetPointX(0))
-        phase_s = phase_graph[0]->GetPointY(0);
-    else if (f[0] > phase_graph[0]->GetPointX(phase_graph[0]->GetN() - 1))
-        phase_s = phase_graph[0]->GetPointY(phase_graph[0]->GetN() - 1);
+    // Double_t phase_s{phase_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < phase_graph[0]->GetPointX(0))
+    //     phase_s = phase_graph[0]->GetPointY(0);
+    // else if (f[0] > phase_graph[0]->GetPointX(phase_graph[0]->GetN() - 1))
+    //     phase_s = phase_graph[0]->GetPointY(phase_graph[0]->GetN() - 1);
 
     Double_t Rt{par[0]};
     Double_t Rl1Rl2{par[1]};
     Double_t C1C2{par[2]};
-    return (+phase_s - std::atan(1 / (w * C1C2 * (Rt + Rl1Rl2))));
+    return (-std::atan(1 / (w * C1C2 * (Rt + Rl1Rl2))));
 }
 
 Double_t ClampAngle(Double_t angle)
@@ -215,13 +434,13 @@ void DrawBlock(int n_block)
     func_arr[2]->SetNpx(10000);
 
     TMultiGraph *V_multi = new TMultiGraph();
-    // V_multi->Add(V_arr[0]);
+    V_multi->Add(V_arr[0]);
     V_multi->Add(V_arr[1]);
     V_multi->Add(V_arr[2]);
 
     TCanvas *test_canva = new TCanvas("test_canva", std::to_string(n_block).c_str(), 0, 0, 800, 600);
     V_multi->Draw("AP");
-    // func_arr[0]->Draw("SAME");
+    func_arr[0]->Draw("SAME");
     func_arr[1]->Draw("SAME");
     func_arr[2]->Draw("SAME");
 }
@@ -559,27 +778,43 @@ void PhaseShiftError(int n_blocks_input)
 
             func_arr[i]->SetParameter(0, amplitude);
             func_arr[i]->SetParameter(1, pulsation);
-            // func_arr[i]->SetParameter(2, phase);
+            func_arr[i]->SetParameter(2, phase);
 
             func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
             func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
-            // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
+            func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
 
             func_arr[i]->SetNumberFitPoints(10000);
             func_arr[i]->SetNpx(10000);
 
-            if (((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0)) // i.e.: error
+            if ((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0) // failed -> Try setting phase + Pi
             {
                 std::cout << "Invalid Fit! Block n: " << n_block << ", graph: " << i << " [0,1,2=V_s,V_w,V_t]\n";
+                std::cout << "\tTrying again with phase + Pi\n";
 
-                // only V_s freq
-                if (i == 0)
+                phase += TMath::Pi();
+
+                func_arr[i]->SetParameter(0, amplitude);
+                func_arr[i]->SetParameter(1, pulsation);
+                func_arr[i]->SetParameter(2, phase);
+
+                func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
+                func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
+                func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
+
+                if (((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0)) // i.e.: error
                 {
-                    freq_arr[n_block] = pulsation / (2. * TMath::Pi());
-                    freq_err_arr[n_block] = (pulsation / 10.) / (2. * TMath::Pi());
+                    std::cout << "Invalid Fit! Block n: " << n_block << ", graph: " << i << " [0,1,2=V_s,V_w,V_t]\n";
+
+                    // only V_s freq
+                    if (i == 0)
+                    {
+                        freq_arr[n_block] = pulsation / (2. * TMath::Pi());
+                        freq_err_arr[n_block] = (pulsation / 10.) / (2. * TMath::Pi());
+                    }
+                    phase_arr[i][n_block] = ClampAngle(phase);
+                    phase_err_arr[i][n_block] = ClampAngle(phase) / 10;
                 }
-                phase_arr[i][n_block] = ClampAngle(phase);
-                phase_err_arr[i][n_block] = ClampAngle(phase) / 10;
             }
             else
             { // only V_s freq
@@ -1047,43 +1282,48 @@ void rooting_rootest(Int_t input_n_blocks)
 
             double pulsation = 2 * TMath::Pi() * frequency;
 
-            // test--------------------------------------------------------------------
-            // if (i == 1)
-            //     func_arr[i]->SetParameters(amplitude, pulsation, phase, amplitude / 292, pulsation * 3, phase);
-            // else
-            // {
-
             func_arr[i]->SetParameter(0, amplitude);
             func_arr[i]->SetParameter(1, pulsation);
-            // func_arr[i]->SetParameter(2, phase);
+            func_arr[i]->SetParameter(2, phase);
             func_arr[i]->SetParameter(3, background);
 
             func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
             func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
             // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
 
-            // func_arr[i]->FixParameter(0, amplitude);
-            // func_arr[i]->FixParameter(1, pulsation);
-            // }
-            // test--------------------------------------------------------------------
-
             func_arr[i]->SetNumberFitPoints(10000);
             func_arr[i]->SetNpx(10000);
 
-            if (((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0)) // i.e.: error
+            if ((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0) // failed -> Try setting phase + Pi
             {
                 std::cout << "Invalid Fit! Block n: " << n_block << ", graph: " << i << " [0,1,2=V_s,V_w,V_t]\n";
+                std::cout << "\tTrying again with phase + Pi\n";
 
-                // only V_s freq
-                if (i == 0)
+                phase += TMath::Pi();
+
+                func_arr[i]->SetParameter(0, amplitude);
+                func_arr[i]->SetParameter(1, pulsation);
+                func_arr[i]->SetParameter(2, phase);
+                func_arr[i]->SetParameter(3, background);
+
+                func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
+                func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
+                // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
+                if (((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0)) // i.e.: error
                 {
-                    freq_arr[n_block] = pulsation / (2. * TMath::Pi());
-                    freq_err_arr[n_block] = (pulsation / 10.) / (2. * TMath::Pi());
+                    std::cout << "Invalid Fit AGAIN! Block n: " << n_block << ", graph: " << i << " [0,1,2=V_s,V_w,V_t]\n";
+
+                    // only V_s freq
+                    if (i == 0)
+                    {
+                        freq_arr[n_block] = pulsation / (2. * TMath::Pi());
+                        freq_err_arr[n_block] = (pulsation / 10.) / (2. * TMath::Pi());
+                    }
+                    ampl_arr[i][n_block] = amplitude;
+                    ampl_err_arr[i][n_block] = amplitude / 10.;
+                    phase_arr[i][n_block] = ClampAngle(phase);
+                    phase_err_arr[i][n_block] = ClampAngle(phase) / 10;
                 }
-                ampl_arr[i][n_block] = amplitude;
-                ampl_err_arr[i][n_block] = amplitude / 10.;
-                phase_arr[i][n_block] = ClampAngle(phase);
-                phase_err_arr[i][n_block] = ClampAngle(phase) / 10;
             }
             else
             { // only V_s freq
@@ -1157,12 +1397,35 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_graph[1] = new TGraphErrors{N_BLOCKS, freq_arr, phase_arr[1], freq_err_arr, phase_err_arr[1]};
     phase_graph[2] = new TGraphErrors{N_BLOCKS, freq_arr, phase_arr[2], freq_err_arr, phase_err_arr[2]};
 
+    //  subtract phase_Vs from all phase graphs
+    for (int n_block = 0; n_block != N_BLOCKS; ++n_block)
+    {
+        Double_t phase_Vs = phase_graph[0]->GetPointY(n_block);
+        Double_t phase_Vs_err = phase_graph[0]->GetErrorY(n_block);
+        phase_graph[0]->SetPointY(n_block, phase_graph[0]->GetPointY(n_block) - phase_Vs);
+        phase_graph[1]->SetPointY(n_block, phase_graph[1]->GetPointY(n_block) - phase_Vs);
+        phase_graph[2]->SetPointY(n_block, phase_graph[2]->GetPointY(n_block) - phase_Vs);
+        phase_graph[0]->SetPointError(n_block, phase_graph[0]->GetErrorX(n_block), 0.);
+        phase_graph[1]->SetPointError(n_block, phase_graph[1]->GetErrorX(n_block),
+                                      std::sqrt(phase_graph[1]->GetErrorY(n_block) * phase_graph[1]->GetErrorY(n_block) + phase_Vs_err * phase_Vs_err));
+        phase_graph[2]->SetPointError(n_block, phase_graph[2]->GetErrorX(n_block),
+                                      std::sqrt(phase_graph[2]->GetErrorY(n_block) * phase_graph[2]->GetErrorY(n_block) + phase_Vs_err * phase_Vs_err));
+    }
+
     // fitting
 
-    TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer_2, 0., 1000., 4}};
+    TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer, 0., 1000., 3}};
     TF1 *ampl_func_t{new TF1{"ampl_func_t", ampl_tweeter, 0., 1000., 3}};
     TF1 *phase_func_w{new TF1{"phase_func_w", phase_woofer, 0., 1000., 3}};
     TF1 *phase_func_t{new TF1{"phase_func_t", phase_tweeter, 0., 1000., 3}};
+
+    // with cl------------------------------------------------
+    TF1 *ampl_func_w_2{new TF1{"ampl_func_w", ampl_woofer_2, 0., 1000., 4}};
+    TF1 *phase_func_w_2{new TF1{"phase_func_w", phase_woofer_2, 0., 1000., 4}};
+
+    TF1 *ampl_func_w_3{new TF1{"ampl_func_w", ampl_woofer_2, 0., 1000., 4}};
+    TF1 *phase_func_w_3{new TF1{"phase_func_w", phase_woofer_2, 0., 1000., 4}};
+    // with cl------------------------------------------------
 
     ampl_func_w->SetNpx(100000);
     ampl_func_w->SetNumberFitPoints(100000);
@@ -1173,10 +1436,20 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_t->SetNpx(100000);
     phase_func_t->SetNumberFitPoints(100000);
 
+    // with cl------------------------------------------------
+    ampl_func_w_2->SetNpx(100000);
+    ampl_func_w_3->SetNpx(100000);
+    phase_func_w_2->SetNpx(100000);
+    phase_func_w_3->SetNpx(100000);
+    ampl_func_w_2->SetNumberFitPoints(100000);
+    ampl_func_w_3->SetNumberFitPoints(100000);
+    phase_func_w_2->SetNumberFitPoints(100000);
+    phase_func_w_3->SetNumberFitPoints(100000);
+    // with cl------------------------------------------------
+
     ampl_func_w->SetParName(0, "Rw");
     ampl_func_w->SetParName(1, "Rl");
     ampl_func_w->SetParName(2, "L");
-    ampl_func_w->SetParName(3, "Cl");
 
     ampl_func_t->SetParName(0, "Rt");
     ampl_func_t->SetParName(1, "Rl1Rl2");
@@ -1190,10 +1463,32 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_t->SetParName(1, "Rl1Rl2");
     phase_func_t->SetParName(2, "C1C2");
 
+    // with cl------------------------------------------------
+
+    ampl_func_w_2->SetParName(0, "Rw");
+    ampl_func_w_2->SetParName(1, "Rl");
+    ampl_func_w_2->SetParName(2, "L");
+    ampl_func_w_2->SetParName(3, "Cl");
+
+    ampl_func_w_3->SetParName(0, "Rw");
+    ampl_func_w_3->SetParName(1, "Rl");
+    ampl_func_w_3->SetParName(2, "L");
+    ampl_func_w_3->SetParName(3, "Cl");
+
+    phase_func_w_2->SetParName(0, "Rw");
+    phase_func_w_2->SetParName(1, "Rl");
+    phase_func_w_2->SetParName(2, "L");
+    phase_func_w_2->SetParName(3, "Cl");
+
+    phase_func_w_3->SetParName(0, "Rw");
+    phase_func_w_3->SetParName(1, "Rl");
+    phase_func_w_3->SetParName(2, "L");
+    phase_func_w_3->SetParName(3, "Cl");
+    // with cl------------------------------------------------
+
     ampl_func_w->SetParameter(0, Rw);
     ampl_func_w->SetParameter(1, Rl);
     ampl_func_w->SetParameter(2, L);
-    ampl_func_w->SetParameter(3, 1E-8);
 
     ampl_func_t->SetParameter(0, Rl);
     ampl_func_t->SetParameter(1, Rl1Rl2);
@@ -1207,53 +1502,41 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_t->SetParameter(1, Rl1Rl2);
     phase_func_t->SetParameter(2, C1C2);
 
-    // PAR LIMITS-----------------------------------------------------------------
-    double N_SIGMA = 3;
-    // ampl_func_w->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
-    // ampl_func_w->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
-    // ampl_func_w->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
-    // ampl_func_w->SetParLimits(3, 0, 1E-6);
-    ampl_func_w->FixParameter(3, 0);
+    // with cl------------------------------------------------
+    ampl_func_w_2->SetParameter(0, Rw);
+    ampl_func_w_2->SetParameter(1, Rl);
+    ampl_func_w_2->SetParameter(2, L);
+    ampl_func_w_2->SetParameter(3, 1E-8);
 
-    // ampl_func_t->SetParLimits(0, Rt - Rt_err, Rt + Rt_err);
-    // ampl_func_t->SetParLimits(1, Rl1Rl2 - Rl1Rl2_err, Rl1Rl2 + Rl1Rl2_err);
-    // ampl_func_t->SetParLimits(2, C1C2 - C1C2_err, C1C2 + C1C2_err);
+    ampl_func_w_3->SetParameter(0, Rw);
+    ampl_func_w_3->SetParameter(1, Rl);
+    ampl_func_w_3->SetParameter(2, L);
+    ampl_func_w_3->SetParameter(3, 1E-8);
 
-    // phase_func_w->SetParLimits(0, Rw - Rw_err, Rw + Rw_err);
-    // phase_func_w->SetParLimits(1, Rl - Rl_err, Rl + Rl_err);
-    // phase_func_w->SetParLimits(2, L - L_err, L + L_err);
+    phase_func_w_2->SetParameter(0, Rw);
+    phase_func_w_2->SetParameter(1, Rl);
+    phase_func_w_2->SetParameter(2, L);
+    phase_func_w_2->SetParameter(3, 1E-8);
 
-    // phase_func_t->SetParLimits(0, Rt - Rt_err, Rt + Rt_err);
-    // phase_func_t->SetParLimits(1, Rl1Rl2 - Rl1Rl2_err, Rl1Rl2 + Rl1Rl2_err);
-    // phase_func_t->SetParLimits(2, C1C2 - C1C2_err, C1C2 + C1C2_err);
+    phase_func_w_3->SetParameter(0, Rw);
+    phase_func_w_3->SetParameter(1, Rl);
+    phase_func_w_3->SetParameter(2, L);
+    phase_func_w_3->SetParameter(3, 1E-8);
+    // with cl------------------------------------------------
 
     // GRAPHICS-----------------------------------------------
-    ampl_func_t->SetLineColor(kBlue);
-    ampl_func_w->SetLineColor(kRed);
+    ampl_func_t->SetLineColor(kBlue + 4);
+    ampl_func_w->SetLineColor(kRed + 2);
 
-    phase_func_t->SetLineColor(kBlue);
-    phase_func_w->SetLineColor(kRed);
+    phase_func_t->SetLineColor(kBlue + 4);
+    phase_func_w->SetLineColor(kRed + 2);
 
-    // ROOT::Math::MinimizerOptions::SetDefaultStrategy(2);
-    // ROOT::Math::MinimizerOptions::SetDefaultMaxFunctionCalls(1000000);
-
-    ampl_graph[1]->Fit(ampl_func_w, "V, E");
-    std::cout << std::endl;
-    // ampl_graph[2]->Fit(ampl_func_t, "M, E");
-    // std::cout << std::endl;
-
-    // phase_graph[1]->Fit(phase_func_w, "M, E");
-    // std::cout << std::endl;
-    // phase_graph[2]->Fit(phase_func_t, "M, E");
-    // std::cout << std::endl;
-
-    ampl_graph[0]->SetName("V Elvis");
-    ampl_graph[1]->SetName("V Woofer");
-    ampl_graph[2]->SetName("V Tweeter");
-
-    ampl_graph[0]->SetTitle("V Elvis");
-    ampl_graph[1]->SetTitle("V Woofer");
-    ampl_graph[2]->SetTitle("V Tweeter");
+    // with cl------------------------------------------------
+    ampl_func_w_2->SetLineColor(kRed + 2);
+    ampl_func_w_3->SetLineColor(kRed + 2);
+    phase_func_w_2->SetLineColor(kRed + 2);
+    phase_func_w_3->SetLineColor(kRed + 2);
+    // with cl------------------------------------------------
 
     ampl_graph[0]->SetMarkerColor(kBlack);
     ampl_graph[1]->SetMarkerColor(kRed);
@@ -1271,25 +1554,938 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_graph[1]->SetLineColor(kRed);
     phase_graph[2]->SetLineColor(kBlue);
 
-    auto multi_ampl{new TMultiGraph};
-    auto multi_phase{new TMultiGraph};
-    for (int i = 1; i != 3; ++i)
+    // FITTING WITHOUT LIMITS (No Cl)-------------------------
+
+    ROOT::Math::MinimizerOptions::SetDefaultStrategy(2);
+    int ampl_woofer_fit_res{ampl_graph[1]->Fit(ampl_func_w, "Q, M, E")};
+    std::cout << std::endl;
+    int ampl_tweeter_fit_res{ampl_graph[2]->Fit(ampl_func_t, "Q, M, E")};
+    std::cout << std::endl;
+
+    int phase_woofer_fit_res{phase_graph[1]->Fit(phase_func_w, "Q, M, E")};
+    std::cout << std::endl;
+    int phase_tweeter_fit_res{phase_graph[2]->Fit(phase_func_t, "Q, M, E")};
+    std::cout << std::endl;
+
+    auto multi_ampl_no_lim_no_Cl{new TMultiGraph};
+    auto multi_phase_no_lim_no_Cl{new TMultiGraph};
+    for (int i = 0; i != 3; ++i)
     {
-        multi_ampl->Add(ampl_graph[i]);
-        std::cout << std::endl;
-
-        multi_phase->Add(phase_graph[i]);
+        multi_ampl_no_lim_no_Cl->Add(ampl_graph[i]);
+        multi_phase_no_lim_no_Cl->Add(phase_graph[i]);
     }
-    // TCanvas *amplitude_canvas{new TCanvas{"amplitude_canvas", "amplitude", 0, 0, 800, 600}};
-    // multi_ampl->Draw("ape");
 
-    // TCanvas *phase_canvas{new TCanvas{"phase_canvas", "phase", 0, 0, 800, 600}};
-    // multi_phase->Draw("ape");
+    multi_ampl_no_lim_no_Cl->SetTitle("Amplitude - Frequency (No Limits, No Cl)");
+    multi_phase_no_lim_no_Cl->SetTitle("Phase - Frequency (No Limits, No Cl)");
 
-    TCanvas *result_canvas{new TCanvas{"result_canvas", "amplitude and phase", 0, 0, 1300, 700}};
-    result_canvas->Divide(2, 1);
-    result_canvas->cd(1);
-    multi_ampl->Draw("ape");
-    result_canvas->cd(2);
-    multi_phase->Draw("ape");
+    multi_ampl_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_no_lim_no_Cl->GetYaxis()->SetTitle("Amplitude (V)");
+    multi_phase_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_no_lim_no_Cl->GetYaxis()->SetTitle("Phase Shift (rad)");
+    multi_phase_no_lim_no_Cl->GetYaxis()->SetTitleOffset(1.2f);
+
+    TCanvas *no_limits_no_cl_canvas{new TCanvas{"no_limits_no_cl_canvas", "Amplitude and Phase No_limits_no_Cl", 0, 0, 1300, 700}};
+    no_limits_no_cl_canvas->Divide(2, 1);
+    no_limits_no_cl_canvas->cd(1);
+    multi_ampl_no_lim_no_Cl->Draw("ape");
+
+    TLegend *no_limits_no_cl_legend_ampl{new TLegend()};
+    // no_limits_no_cl_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    no_limits_no_cl_legend_ampl->SetNColumns(3);
+    // RIGA 1
+    no_limits_no_cl_legend_ampl->AddEntry(ampl_graph[0], "Amplitude V_S", "ep");
+    no_limits_no_cl_legend_ampl->AddEntry((TObject *)0, "", "");
+    no_limits_no_cl_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    no_limits_no_cl_legend_ampl->AddEntry(ampl_graph[1], "Amplitude V_Woofer", "ep");
+    no_limits_no_cl_legend_ampl->AddEntry(ampl_func_w, "Amplitude V_Woofer Fit", "l");
+    no_limits_no_cl_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_w->GetChisquare() / ampl_func_w->GetNDF())).c_str()), "");
+    // RIGA 3
+    for (int i = 0; i != ampl_func_w->GetNpar(); ++i)
+        no_limits_no_cl_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_w->GetParName(i)) + " = " + NumErrScien(ampl_func_w->GetParameter(i), ampl_func_w->GetParError(i), ampl_func_w->GetParName(i))).c_str(), "");
+    // RIGA 4
+    no_limits_no_cl_legend_ampl->AddEntry(ampl_graph[2], "Amplitude V_Tweeter", "ep");
+    no_limits_no_cl_legend_ampl->AddEntry(ampl_func_t, "Amplitude V_Tweeter Fit", "l");
+    no_limits_no_cl_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_t->GetChisquare() / ampl_func_t->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != ampl_func_t->GetNpar(); ++i)
+        no_limits_no_cl_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_t->GetParName(i)) + " = " + NumErrScien(ampl_func_t->GetParameter(i), ampl_func_t->GetParError(i), ampl_func_t->GetParName(i))).c_str(), "");
+
+    no_limits_no_cl_legend_ampl->Draw();
+
+    no_limits_no_cl_canvas->cd(2);
+    multi_phase_no_lim_no_Cl->Draw("ape");
+
+    // TLegend *no_limits_no_cl_legend_phasel{new TLegend()};
+    // no_limits_no_cl_legend_phasel->SetMargin(0.05);
+    // no_limits_no_cl_legend_phasel->SetEntrySeparation(0);
+    // no_limits_no_cl_legend_phasel->SetHeader("Phase Shift - Frequency", "C"); // option "C" allows to center the header
+    // no_limits_no_cl_legend_phasel->AddEntry(phase_graph[0], "Phase Shift V_S", "ep");
+    // no_limits_no_cl_legend_phasel->AddEntry(phase_graph[1], "Phase Shift V_Woofer", "ep");
+    // no_limits_no_cl_legend_phasel->AddEntry(phase_graph[2], "Phase Shift V_Tweeter", "ep");
+    // no_limits_no_cl_legend_phasel->AddEntry(phase_func_w, "Phase Shift V_Woofer Fit", "l");
+    // no_limits_no_cl_legend_phasel->AddEntry(phase_func_t, "Phase Shift V_Tweeter Fit", "l");
+    // no_limits_no_cl_legend_phasel->Draw();
+
+    TLegend *no_limits_no_cl_legend_phase{new TLegend()};
+    // no_limits_no_cl_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    no_limits_no_cl_legend_phase->SetNColumns(3);
+    // RIGA 1
+    no_limits_no_cl_legend_phase->AddEntry(phase_graph[0], "Phase V_S", "ep");
+    no_limits_no_cl_legend_phase->AddEntry((TObject *)0, "", "");
+    no_limits_no_cl_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    no_limits_no_cl_legend_phase->AddEntry(phase_graph[1], "Phase V_Woofer", "ep");
+    no_limits_no_cl_legend_phase->AddEntry(phase_func_w, "Phase V_Woofer Fit", "l");
+    no_limits_no_cl_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_w->GetChisquare() / phase_func_w->GetNDF())).c_str()), "");
+    // RIGA 3
+    for (int i = 0; i != phase_func_w->GetNpar(); ++i)
+        no_limits_no_cl_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_w->GetParName(i)) + " = " + NumErrScien(phase_func_w->GetParameter(i), phase_func_w->GetParError(i), phase_func_w->GetParName(i))).c_str(), "");
+    // RIGA 4
+    no_limits_no_cl_legend_phase->AddEntry(phase_graph[2], "Phase V_Tweeter", "ep");
+    no_limits_no_cl_legend_phase->AddEntry(phase_func_t, "Phase V_Tweeter Fit", "l");
+    no_limits_no_cl_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_t->GetChisquare() / phase_func_t->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != phase_func_t->GetNpar(); ++i)
+        no_limits_no_cl_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_t->GetParName(i)) + " = " + NumErrScien(phase_func_t->GetParameter(i), phase_func_t->GetParError(i), phase_func_t->GetParName(i))).c_str(), "");
+
+    no_limits_no_cl_legend_phase->Draw();
+
+    // print_res
+    std::ofstream no_limits_no_Cl_file("./risultati_finali/Sweep_" + GetSweepRange() + "/no_limits_no_Cl_" + std::to_string(GetVoltage()) + ".txt");
+    no_limits_no_Cl_file << std::setprecision(10);
+    no_limits_no_Cl_file << "Ampl_woofer:\n";
+    no_limits_no_Cl_file << "\tFit Status: " + (ampl_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_woofer_fit_res) + ")")) << '\n';
+    no_limits_no_Cl_file << "\tChi^2: " << ampl_func_w->GetChisquare() << '\n';
+    no_limits_no_Cl_file << "\tNdf: " << ampl_func_w->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tCHI RIDOTTO: " << ampl_func_w->GetChisquare() / ampl_func_w->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_w->GetNpar(); ++i)
+        no_limits_no_Cl_file << "\t\t[" << i << "] - " << ampl_func_w->GetParName(i) << " = " << ampl_func_w->GetParameter(i) << " +- " << ampl_func_w->GetParError(i) << '\n';
+    no_limits_no_Cl_file << "Ampl_tweeter:\n";
+    no_limits_no_Cl_file << "\tFit Status: " + (ampl_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_tweeter_fit_res) + ")")) << '\n';
+    no_limits_no_Cl_file << "\tChi^2: " << ampl_func_t->GetChisquare() << '\n';
+    no_limits_no_Cl_file << "\tNdf: " << ampl_func_t->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tCHI RIDOTTO: " << ampl_func_t->GetChisquare() / ampl_func_t->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_t->GetNpar(); ++i)
+        no_limits_no_Cl_file << "\t\t[" << i << "] - " << ampl_func_t->GetParName(i) << " = " << ampl_func_t->GetParameter(i) << " +- " << ampl_func_t->GetParError(i) << '\n';
+    no_limits_no_Cl_file << "Phase_woofer:\n";
+    no_limits_no_Cl_file << "\tFit Status: " + (phase_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_woofer_fit_res) + ")")) << '\n';
+    no_limits_no_Cl_file << "\tChi^2: " << phase_func_w->GetChisquare() << '\n';
+    no_limits_no_Cl_file << "\tNdf: " << phase_func_w->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tCHI RIDOTTO: " << phase_func_w->GetChisquare() / phase_func_w->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_w->GetNpar(); ++i)
+        no_limits_no_Cl_file << "\t\t[" << i << "] - " << phase_func_w->GetParName(i) << " = " << phase_func_w->GetParameter(i) << " +- " << phase_func_w->GetParError(i) << '\n';
+    no_limits_no_Cl_file << "Phase_tweeter:\n";
+    no_limits_no_Cl_file << "\tFit Status: " + (phase_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_tweeter_fit_res) + ")")) << '\n';
+    no_limits_no_Cl_file << "\tChi^2: " << phase_func_t->GetChisquare() << '\n';
+    no_limits_no_Cl_file << "\tNdf: " << phase_func_t->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tCHI RIDOTTO: " << phase_func_t->GetChisquare() / phase_func_t->GetNDF() << '\n';
+    no_limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_t->GetNpar(); ++i)
+        no_limits_no_Cl_file << "\t\t[" << i << "] - " << phase_func_t->GetParName(i) << " = " << phase_func_t->GetParameter(i) << " +- " << phase_func_t->GetParError(i) << '\n';
+    no_limits_no_Cl_file.close();
+
+    // NO LIMITS (EXCEPT CL>=0) - Cl 2 -----------------------------------------------------------------
+    TGraphErrors *ampl_graph_no_limits_Cl2{new TGraphErrors(*ampl_graph[1])};
+    TGraphErrors *phase_graph_no_limits_Cl2{new TGraphErrors(*phase_graph[1])};
+
+    ampl_func_w_2->SetParLimits(3, 0, 1e-6);
+    phase_func_w_2->SetParLimits(3, 0, 1e-6);
+    ampl_woofer_fit_res = ampl_graph_no_limits_Cl2->Fit(ampl_func_w_2, "Q, M, E");
+    std::cout << std::endl;
+
+    phase_woofer_fit_res = phase_graph_no_limits_Cl2->Fit(phase_func_w_2, "Q, M, E");
+    std::cout << std::endl;
+
+    auto multi_ampl_no_lim_Cl_2{new TMultiGraph};
+    auto multi_phase_no_lim_Cl_2{new TMultiGraph};
+
+    multi_ampl_no_lim_Cl_2->Add(ampl_graph[0]);
+    multi_phase_no_lim_Cl_2->Add(phase_graph[0]);
+    multi_ampl_no_lim_Cl_2->Add(ampl_graph_no_limits_Cl2);
+    multi_phase_no_lim_Cl_2->Add(phase_graph_no_limits_Cl2);
+    multi_ampl_no_lim_Cl_2->Add(ampl_graph[2]);
+    multi_phase_no_lim_Cl_2->Add(phase_graph[2]);
+
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_2, "Q, M, E");
+    // std::cout << std::endl;
+
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_2, "Q, M, E");
+    // std::cout << std::endl;
+
+    // auto multi_ampl_no_lim_Cl_2{new TMultiGraph};
+    // auto multi_phase_no_lim_Cl_2{new TMultiGraph};
+
+    // for (int i = 0; i != 3; ++i)
+    // {
+    //     multi_ampl_no_lim_Cl_2->Add(ampl_graph[i]);
+    //     multi_phase_no_lim_Cl_2->Add(phase_graph[i]);
+    // }
+    multi_ampl_no_lim_Cl_2->SetTitle("Amplitude - Frequency (No Limits, Cl)");
+    multi_phase_no_lim_Cl_2->SetTitle("Phase - Frequency (No Limits, Cl)");
+
+    multi_ampl_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_no_lim_Cl_2->GetYaxis()->SetTitle("Amplitude (V)");
+    multi_phase_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_no_lim_Cl_2->GetYaxis()->SetTitle("Phase (rad)");
+    multi_phase_no_lim_Cl_2->GetYaxis()->SetTitleOffset(1.2f);
+
+    TCanvas *no_limits_Cl_2_canvas{new TCanvas{"no_limits_Cl_2_canvas", "Amplitude and Phase No_limits_Cl_2", 0, 0, 1300, 700}};
+    no_limits_Cl_2_canvas->Divide(2, 1);
+    no_limits_Cl_2_canvas->cd(1);
+    multi_ampl_no_lim_Cl_2->Draw("ape");
+
+    TLegend *no_limits_cl_2_legend_ampl{new TLegend()};
+    // no_limits_cl_2_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    no_limits_cl_2_legend_ampl->SetNColumns(3);
+    // RIGA 1
+    no_limits_cl_2_legend_ampl->AddEntry(ampl_graph[0], "Amplitude V_S", "ep");
+    no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    no_limits_cl_2_legend_ampl->AddEntry(ampl_graph_no_limits_Cl2, "Amplitude V_Woofer", "ep");
+    no_limits_cl_2_legend_ampl->AddEntry(ampl_func_w_2, "Amplitude V_Woofer Fit", "l");
+    no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_w_2->GetChisquare() / ampl_func_w_2->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != ampl_func_w_2->GetNpar(); ++i)
+        no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_w_2->GetParName(i)) + " = " + NumErrScien(ampl_func_w_2->GetParameter(i), ampl_func_w_2->GetParError(i), ampl_func_w_2->GetParName(i))).c_str(), "");
+    no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 5
+    no_limits_cl_2_legend_ampl->AddEntry(ampl_graph[2], "Amplitude V_Tweeter", "ep");
+    no_limits_cl_2_legend_ampl->AddEntry(ampl_func_t, "Amplitude V_Tweeter Fit", "l");
+    no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_t->GetChisquare() / ampl_func_t->GetNDF())).c_str()), "");
+    // RIGA 6
+    for (int i = 0; i != ampl_func_t->GetNpar(); ++i)
+        no_limits_cl_2_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_t->GetParName(i)) + " = " + NumErrScien(ampl_func_t->GetParameter(i), ampl_func_t->GetParError(i), ampl_func_t->GetParName(i))).c_str(), "");
+
+    no_limits_cl_2_legend_ampl->Draw();
+
+    no_limits_Cl_2_canvas->cd(2);
+    multi_phase_no_lim_Cl_2->Draw("ape");
+
+    TLegend *no_limits_cl_2_legend_phase{new TLegend()};
+    // no_limits_cl_2_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    no_limits_cl_2_legend_phase->SetNColumns(3);
+    // RIGA 1
+    no_limits_cl_2_legend_phase->AddEntry(phase_graph[0], "Phase V_S", "ep");
+    no_limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    no_limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    no_limits_cl_2_legend_phase->AddEntry(phase_graph_no_limits_Cl2, "Phase V_Woofer", "ep");
+    no_limits_cl_2_legend_phase->AddEntry(phase_func_w_2, "Phase V_Woofer Fit", "l");
+    no_limits_cl_2_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_w_2->GetChisquare() / phase_func_w_2->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != phase_func_w_2->GetNpar(); ++i)
+        no_limits_cl_2_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_w_2->GetParName(i)) + " = " + NumErrScien(phase_func_w_2->GetParameter(i), phase_func_w_2->GetParError(i), phase_func_w_2->GetParName(i))).c_str(), "");
+    no_limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    no_limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 4
+    no_limits_cl_2_legend_phase->AddEntry(phase_graph[2], "Phase V_Tweeter", "ep");
+    no_limits_cl_2_legend_phase->AddEntry(phase_func_t, "Phase V_Tweeter Fit", "l");
+    no_limits_cl_2_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_t->GetChisquare() / phase_func_t->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != phase_func_t->GetNpar(); ++i)
+        no_limits_cl_2_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_t->GetParName(i)) + " = " + NumErrScien(phase_func_t->GetParameter(i), phase_func_t->GetParError(i), phase_func_t->GetParName(i))).c_str(), "");
+
+    no_limits_cl_2_legend_phase->Draw();
+
+    // print_res
+    std::ofstream no_limits_Cl_2_file("./risultati_finali/Sweep_" + GetSweepRange() + "/no_limits_Cl_2_" + std::to_string(GetVoltage()) + ".txt");
+    no_limits_Cl_2_file << std::setprecision(10);
+    no_limits_Cl_2_file << "Ampl_woofer:\n";
+    no_limits_Cl_2_file << "\tFit Status: " + (ampl_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_woofer_fit_res) + ")")) << '\n';
+    no_limits_Cl_2_file << "\tChi^2: " << ampl_func_w_2->GetChisquare() << '\n';
+    no_limits_Cl_2_file << "\tNdf: " << ampl_func_w_2->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tCHI RIDOTTO: " << ampl_func_w_2->GetChisquare() / ampl_func_w_2->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_w_2->GetNpar(); ++i)
+        no_limits_Cl_2_file << "\t\t[" << i << "] - " << ampl_func_w_2->GetParName(i) << " = " << ampl_func_w_2->GetParameter(i) << " +- " << ampl_func_w_2->GetParError(i) << '\n';
+    no_limits_Cl_2_file << "Ampl_tweeter:\n";
+    no_limits_Cl_2_file << "\tFit Status: " + (ampl_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_tweeter_fit_res) + ")")) << '\n';
+    no_limits_Cl_2_file << "\tChi^2: " << ampl_func_t->GetChisquare() << '\n';
+    no_limits_Cl_2_file << "\tNdf: " << ampl_func_t->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tCHI RIDOTTO: " << ampl_func_t->GetChisquare() / ampl_func_t->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_t->GetNpar(); ++i)
+        no_limits_Cl_2_file << "\t\t[" << i << "] - " << ampl_func_t->GetParName(i) << " = " << ampl_func_t->GetParameter(i) << " +- " << ampl_func_t->GetParError(i) << '\n';
+    no_limits_Cl_2_file << "Phase_woofer:\n";
+    no_limits_Cl_2_file << "\tFit Status: " + (phase_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_woofer_fit_res) + ")")) << '\n';
+    no_limits_Cl_2_file << "\tChi^2: " << phase_func_w_2->GetChisquare() << '\n';
+    no_limits_Cl_2_file << "\tNdf: " << phase_func_w_2->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tCHI RIDOTTO: " << phase_func_w_2->GetChisquare() / phase_func_w_2->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_w_2->GetNpar(); ++i)
+        no_limits_Cl_2_file << "\t\t[" << i << "] - " << phase_func_w_2->GetParName(i) << " = " << phase_func_w_2->GetParameter(i) << " +- " << phase_func_w_2->GetParError(i) << '\n';
+    no_limits_Cl_2_file << "Phase_tweeter:\n";
+    no_limits_Cl_2_file << "\tFit Status: " + (phase_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_tweeter_fit_res) + ")")) << '\n';
+    no_limits_Cl_2_file << "\tChi^2: " << phase_func_t->GetChisquare() << '\n';
+    no_limits_Cl_2_file << "\tNdf: " << phase_func_t->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tCHI RIDOTTO: " << phase_func_t->GetChisquare() / phase_func_t->GetNDF() << '\n';
+    no_limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_t->GetNpar(); ++i)
+        no_limits_Cl_2_file << "\t\t[" << i << "] - " << phase_func_t->GetParName(i) << " = " << phase_func_t->GetParameter(i) << " +- " << phase_func_t->GetParError(i) << '\n';
+    no_limits_Cl_2_file.close();
+
+    // NO LIMITS - Cl 3 -----------------------------------------------------------------
+    TGraphErrors *ampl_graph_no_limits_Cl3{new TGraphErrors(*ampl_graph[1])};
+    TGraphErrors *phase_graph_no_limits_Cl3{new TGraphErrors(*phase_graph[1])};
+
+    ampl_func_w_3->SetParLimits(3, 0, 1e-6);
+    phase_func_w_3->SetParLimits(3, 0, 1e-6);
+    ampl_woofer_fit_res = ampl_graph_no_limits_Cl3->Fit(ampl_func_w_3, "Q, M, E");
+    std::cout << std::endl;
+
+    phase_woofer_fit_res = phase_graph_no_limits_Cl3->Fit(phase_func_w_3, "Q, M, E");
+    std::cout << std::endl;
+
+    auto multi_ampl_no_lim_Cl_3{new TMultiGraph};
+    auto multi_phase_no_lim_Cl_3{new TMultiGraph};
+
+    multi_ampl_no_lim_Cl_3->Add(ampl_graph[0]);
+    multi_phase_no_lim_Cl_3->Add(phase_graph[0]);
+    multi_ampl_no_lim_Cl_3->Add(ampl_graph_no_limits_Cl3);
+    multi_phase_no_lim_Cl_3->Add(phase_graph_no_limits_Cl3);
+    multi_ampl_no_lim_Cl_3->Add(ampl_graph[2]);
+    multi_phase_no_lim_Cl_3->Add(phase_graph[2]);
+
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_3, "Q, M, E");
+    // std::cout << std::endl;
+
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_3, "Q, M, E");
+    // std::cout << std::endl;
+
+    // auto multi_ampl_no_lim_Cl_3{new TMultiGraph};
+    // auto multi_phase_no_lim_Cl_3{new TMultiGraph};
+
+    // for (int i = 0; i != 3; ++i)
+    // {
+    //     multi_ampl_no_lim_Cl_3->Add(ampl_graph[i]);
+    //     multi_phase_no_lim_Cl_3->Add(phase_graph[i]);
+    // }
+
+    multi_ampl_no_lim_Cl_3->SetTitle("Amplitude - Frequency (No Limits, Cl)");
+    multi_phase_no_lim_Cl_3->SetTitle("Phase - Frequency (No Limits, Cl)");
+
+    multi_ampl_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_no_lim_Cl_3->GetYaxis()->SetTitle("Amplitude (V)");
+    multi_phase_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_no_lim_Cl_3->GetYaxis()->SetTitle("Phase (rad)");
+    multi_phase_no_lim_Cl_3->GetYaxis()->SetTitleOffset(1.2f);
+
+    TCanvas *no_limits_Cl_3_canvas{new TCanvas{"no_limits_Cl_3_canvas", "Amplitude and Phase No_limits_Cl_3", 0, 0, 1300, 700}};
+    no_limits_Cl_3_canvas->Divide(2, 1);
+    no_limits_Cl_3_canvas->cd(1);
+    multi_ampl_no_lim_Cl_3->Draw("ape");
+
+    TLegend *no_limits_cl_3_legend_ampl{new TLegend()};
+    // no_limits_cl_3_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    no_limits_cl_3_legend_ampl->SetNColumns(3);
+    // RIGA 1
+    no_limits_cl_3_legend_ampl->AddEntry(ampl_graph[0], "Amplitude V_S", "ep");
+    no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    no_limits_cl_3_legend_ampl->AddEntry(ampl_graph_no_limits_Cl3, "Amplitude V_Woofer", "ep");
+    no_limits_cl_3_legend_ampl->AddEntry(ampl_func_w_3, "Amplitude V_Woofer Fit", "l");
+    no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_w_3->GetChisquare() / ampl_func_w_3->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != ampl_func_w_3->GetNpar(); ++i)
+        no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_w_3->GetParName(i)) + " = " + NumErrScien(ampl_func_w_3->GetParameter(i), ampl_func_w_3->GetParError(i), ampl_func_w_3->GetParName(i))).c_str(), "");
+    no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 5
+    no_limits_cl_3_legend_ampl->AddEntry(ampl_graph[2], "Amplitude V_Tweeter", "ep");
+    no_limits_cl_3_legend_ampl->AddEntry(ampl_func_t, "Amplitude V_Tweeter Fit", "l");
+    no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_t->GetChisquare() / ampl_func_t->GetNDF())).c_str()), "");
+    // RIGA 6
+    for (int i = 0; i != ampl_func_t->GetNpar(); ++i)
+        no_limits_cl_3_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_t->GetParName(i)) + " = " + NumErrScien(ampl_func_t->GetParameter(i), ampl_func_t->GetParError(i), ampl_func_w_3->GetParName(i))).c_str(), "");
+
+    no_limits_cl_3_legend_ampl->Draw();
+
+    no_limits_Cl_3_canvas->cd(2);
+    multi_phase_no_lim_Cl_3->Draw("ape");
+
+    TLegend *no_limits_cl_3_legend_phase{new TLegend()};
+    // no_limits_cl_3_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    no_limits_cl_3_legend_phase->SetNColumns(3);
+    // RIGA 1
+    no_limits_cl_3_legend_phase->AddEntry(phase_graph[0], "Phase V_S", "ep");
+    no_limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    no_limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    no_limits_cl_3_legend_phase->AddEntry(phase_graph_no_limits_Cl3, "Phase V_Woofer", "ep");
+    no_limits_cl_3_legend_phase->AddEntry(phase_func_w_3, "Phase V_Woofer Fit", "l");
+    no_limits_cl_3_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_w_3->GetChisquare() / phase_func_w_3->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != phase_func_w_3->GetNpar(); ++i)
+        no_limits_cl_3_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_w_3->GetParName(i)) + " = " + NumErrScien(phase_func_w_3->GetParameter(i), phase_func_w_3->GetParError(i), phase_func_w_3->GetParName(i))).c_str(), "");
+    no_limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    no_limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 4
+    no_limits_cl_3_legend_phase->AddEntry(phase_graph[2], "Phase V_Tweeter", "ep");
+    no_limits_cl_3_legend_phase->AddEntry(phase_func_t, "Phase V_Tweeter Fit", "l");
+    no_limits_cl_3_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_t->GetChisquare() / phase_func_t->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != phase_func_t->GetNpar(); ++i)
+        no_limits_cl_3_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_t->GetParName(i)) + " = " + NumErrScien(phase_func_t->GetParameter(i), phase_func_t->GetParError(i), phase_func_t->GetParName(i))).c_str(), "");
+
+    no_limits_cl_3_legend_phase->Draw();
+
+    // print_res
+    std::ofstream no_limits_Cl_3_file("./risultati_finali/Sweep_" + GetSweepRange() + "/no_limits_Cl_3_" + std::to_string(GetVoltage()) + ".txt");
+    no_limits_Cl_3_file << std::setprecision(10);
+    no_limits_Cl_3_file << "Ampl_woofer:\n";
+    no_limits_Cl_3_file << "\tFit Status: " + (ampl_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_woofer_fit_res) + ")")) << '\n';
+    no_limits_Cl_3_file << "\tChi^2: " << ampl_func_w_3->GetChisquare() << '\n';
+    no_limits_Cl_3_file << "\tNdf: " << ampl_func_w_3->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tCHI RIDOTTO: " << ampl_func_w_3->GetChisquare() / ampl_func_w_3->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_w_3->GetNpar(); ++i)
+        no_limits_Cl_3_file << "\t\t[" << i << "] - " << ampl_func_w_3->GetParName(i) << " = " << ampl_func_w_3->GetParameter(i) << " +- " << ampl_func_w_3->GetParError(i) << '\n';
+    no_limits_Cl_3_file << "Ampl_tweeter:\n";
+    no_limits_Cl_3_file << "\tFit Status: " + (ampl_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_tweeter_fit_res) + ")")) << '\n';
+    no_limits_Cl_3_file << "\tChi^2: " << ampl_func_t->GetChisquare() << '\n';
+    no_limits_Cl_3_file << "\tNdf: " << ampl_func_t->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tCHI RIDOTTO: " << ampl_func_t->GetChisquare() / ampl_func_t->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_t->GetNpar(); ++i)
+        no_limits_Cl_3_file << "\t\t[" << i << "] - " << ampl_func_t->GetParName(i) << " = " << ampl_func_t->GetParameter(i) << " +- " << ampl_func_t->GetParError(i) << '\n';
+    no_limits_Cl_3_file << "Phase_woofer:\n";
+    no_limits_Cl_3_file << "\tFit Status: " + (phase_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_woofer_fit_res) + ")")) << '\n';
+    no_limits_Cl_3_file << "\tChi^2: " << phase_func_w_3->GetChisquare() << '\n';
+    no_limits_Cl_3_file << "\tNdf: " << phase_func_w_3->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tCHI RIDOTTO: " << phase_func_w_3->GetChisquare() / phase_func_w_3->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_w_3->GetNpar(); ++i)
+        no_limits_Cl_3_file << "\t\t[" << i << "] - " << phase_func_w_3->GetParName(i) << " = " << phase_func_w_3->GetParameter(i) << " +- " << phase_func_w_3->GetParError(i) << '\n';
+    no_limits_Cl_3_file << "Phase_tweeter:\n";
+    no_limits_Cl_3_file << "\tFit Status: " + (phase_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_tweeter_fit_res) + ")")) << '\n';
+    no_limits_Cl_3_file << "\tChi^2: " << phase_func_t->GetChisquare() << '\n';
+    no_limits_Cl_3_file << "\tNdf: " << phase_func_t->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tCHI RIDOTTO: " << phase_func_t->GetChisquare() / phase_func_t->GetNDF() << '\n';
+    no_limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_t->GetNpar(); ++i)
+        no_limits_Cl_3_file << "\t\t[" << i << "] - " << phase_func_t->GetParName(i) << " = " << phase_func_t->GetParameter(i) << " +- " << phase_func_t->GetParError(i) << '\n';
+    no_limits_Cl_3_file.close();
+
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+    TGraphErrors *ampl_graph_limits[3]{new TGraphErrors(*ampl_graph[0]),
+                                       new TGraphErrors(*ampl_graph[1]),
+                                       new TGraphErrors(*ampl_graph[2])};
+
+    TGraphErrors *phase_graph_limits[3]{new TGraphErrors(*phase_graph[0]),
+                                        new TGraphErrors(*phase_graph[1]),
+                                        new TGraphErrors(*phase_graph[2])};
+
+    TF1 *ampl_func_w_limits = new TF1(*ampl_func_w);
+    TF1 *ampl_func_t_limits = new TF1(*ampl_func_t);
+    TF1 *phase_func_w_limits = new TF1(*phase_func_w);
+    TF1 *phase_func_t_limits = new TF1(*phase_func_t);
+
+    TF1 *ampl_func_w_2_limits = new TF1(*ampl_func_w_2);
+    TF1 *ampl_func_w_3_limits = new TF1(*ampl_func_w_3);
+    TF1 *phase_func_w_2_limits = new TF1(*phase_func_w_2);
+    TF1 *phase_func_w_3_limits = new TF1(*phase_func_w_3);
+
+    ampl_func_w_limits->SetParameter(0, Rw);
+    ampl_func_w_limits->SetParameter(1, Rl);
+    ampl_func_w_limits->SetParameter(2, L);
+
+    ampl_func_t_limits->SetParameter(0, Rl);
+    ampl_func_t_limits->SetParameter(1, Rl1Rl2);
+    ampl_func_t_limits->SetParameter(2, C1C2);
+
+    phase_func_w_limits->SetParameter(0, Rw);
+    phase_func_w_limits->SetParameter(1, Rl);
+    phase_func_w_limits->SetParameter(2, L);
+
+    phase_func_t_limits->SetParameter(0, Rl);
+    phase_func_t_limits->SetParameter(1, Rl1Rl2);
+    phase_func_t_limits->SetParameter(2, C1C2);
+
+    // with cl------------------------------------------------
+    ampl_func_w_2_limits->SetParameter(0, Rw);
+    ampl_func_w_2_limits->SetParameter(1, Rl);
+    ampl_func_w_2_limits->SetParameter(2, L);
+    ampl_func_w_2_limits->SetParameter(3, 1E-8);
+
+    ampl_func_w_3_limits->SetParameter(0, Rw);
+    ampl_func_w_3_limits->SetParameter(1, Rl);
+    ampl_func_w_3_limits->SetParameter(2, L);
+    ampl_func_w_3_limits->SetParameter(3, 1E-8);
+
+    phase_func_w_2_limits->SetParameter(0, Rw);
+    phase_func_w_2_limits->SetParameter(1, Rl);
+    phase_func_w_2_limits->SetParameter(2, L);
+    phase_func_w_2_limits->SetParameter(3, 1E-8);
+
+    phase_func_w_3_limits->SetParameter(0, Rw);
+    phase_func_w_3_limits->SetParameter(1, Rl);
+    phase_func_w_3_limits->SetParameter(2, L);
+    phase_func_w_3_limits->SetParameter(3, 1E-8);
+    // with cl------------------------------------------------
+
+    // PAR LIMITS-----------------------------------------------------------------
+    double N_SIGMA = 3;
+    ampl_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    ampl_func_w_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    ampl_func_w_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
+
+    ampl_func_t_limits->SetParLimits(0, Rt - N_SIGMA * Rt_err, Rt + N_SIGMA * Rt_err);
+    ampl_func_t_limits->SetParLimits(1, Rl1Rl2 - N_SIGMA * Rl1Rl2_err, Rl1Rl2 + N_SIGMA * Rl1Rl2_err);
+    ampl_func_t_limits->SetParLimits(2, C1C2 - N_SIGMA * C1C2_err, C1C2 + N_SIGMA * C1C2_err);
+
+    phase_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    phase_func_w_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    phase_func_w_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
+
+    phase_func_t_limits->SetParLimits(0, Rt - N_SIGMA * Rt_err, Rt + N_SIGMA * Rt_err);
+    phase_func_t_limits->SetParLimits(1, Rl1Rl2 - N_SIGMA * Rl1Rl2_err, Rl1Rl2 + N_SIGMA * Rl1Rl2_err);
+    phase_func_t_limits->SetParLimits(2, C1C2 - N_SIGMA * C1C2_err, C1C2 + N_SIGMA * C1C2_err);
+
+    // cl---------------------
+    ampl_func_w_2_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    ampl_func_w_2_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    ampl_func_w_2_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
+    ampl_func_w_2_limits->SetParLimits(3, 0., 1e-6);
+
+    phase_func_w_2_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    phase_func_w_2_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    phase_func_w_2_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
+    phase_func_w_2_limits->SetParLimits(3, 0., 1e-6);
+
+    ampl_func_w_3_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    ampl_func_w_3_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    ampl_func_w_3_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
+    ampl_func_w_3_limits->SetParLimits(3, 0., 1e-6);
+
+    phase_func_w_3_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    phase_func_w_3_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    phase_func_w_3_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
+    phase_func_w_3_limits->SetParLimits(3, 0., 1e-6);
+    // cl---------------------
+
+    // ROOT::Math::MinimizerOptions::SetDefaultMaxFunctionCalls(1000000);
+
+    // FITTING WITH LIMITS (No Cl)-------------------------
+
+    ampl_woofer_fit_res = ampl_graph_limits[1]->Fit(ampl_func_w_limits, "Q, M, E");
+    std::cout << std::endl;
+    ampl_tweeter_fit_res = ampl_graph_limits[2]->Fit(ampl_func_t_limits, "Q, M, E");
+    std::cout << std::endl;
+
+    phase_woofer_fit_res = phase_graph_limits[1]->Fit(phase_func_w_limits, "Q, M, E");
+    std::cout << std::endl;
+    phase_tweeter_fit_res = phase_graph_limits[2]->Fit(phase_func_t_limits, "Q, M, E");
+    std::cout << std::endl;
+
+    auto multi_ampl_lim_no_Cl{new TMultiGraph};
+    auto multi_phase_lim_no_Cl{new TMultiGraph};
+    for (int i = 0; i != 3; ++i)
+    {
+        multi_ampl_lim_no_Cl->Add(ampl_graph_limits[i]);
+        multi_phase_lim_no_Cl->Add(phase_graph_limits[i]);
+    }
+
+    multi_ampl_lim_no_Cl->SetTitle("Amplitude - Frequency (Limited, No Cl)");
+    multi_phase_lim_no_Cl->SetTitle("Phase - Frequency (Limited, No Cl)");
+
+    multi_ampl_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_lim_no_Cl->GetYaxis()->SetTitle("Amplitude (V)");
+    multi_phase_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_lim_no_Cl->GetYaxis()->SetTitle("Phase (rad)");
+    multi_phase_lim_no_Cl->GetYaxis()->SetTitleOffset(1.2f);
+
+    TCanvas *limits_no_cl_canvas{new TCanvas{"limits_no_cl_canvas", "Amplitude and Phase Limits_no_Cl", 0, 0, 1300, 700}};
+    limits_no_cl_canvas->Divide(2, 1);
+    limits_no_cl_canvas->cd(1);
+    multi_ampl_lim_no_Cl->Draw("ape");
+
+    TLegend *limits_no_cl_legend_ampl{new TLegend()};
+    // limits_no_cl_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    limits_no_cl_legend_ampl->SetNColumns(3);
+    // RIGA 1
+    limits_no_cl_legend_ampl->AddEntry(ampl_graph_limits[0], "Amplitude V_S", "ep");
+    limits_no_cl_legend_ampl->AddEntry((TObject *)0, "", "");
+    limits_no_cl_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    limits_no_cl_legend_ampl->AddEntry(ampl_graph_limits[1], "Amplitude V_Woofer", "ep");
+    limits_no_cl_legend_ampl->AddEntry(ampl_func_w_limits, "Amplitude V_Woofer Fit", "l");
+    limits_no_cl_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_w_limits->GetChisquare() / ampl_func_w_limits->GetNDF())).c_str()), "");
+    // RIGA 3
+    for (int i = 0; i != ampl_func_w_limits->GetNpar(); ++i)
+        limits_no_cl_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_w_limits->GetParName(i)) + " = " + NumErrScien(ampl_func_w_limits->GetParameter(i), ampl_func_w_limits->GetParError(i), ampl_func_w_limits->GetParName(i))).c_str(), "");
+    // RIGA 4
+    limits_no_cl_legend_ampl->AddEntry(ampl_graph_limits[2], "Amplitude V_Tweeter", "ep");
+    limits_no_cl_legend_ampl->AddEntry(ampl_func_t_limits, "Amplitude V_Tweeter Fit", "l");
+    limits_no_cl_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_t_limits->GetChisquare() / ampl_func_t_limits->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != ampl_func_t_limits->GetNpar(); ++i)
+        limits_no_cl_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_t_limits->GetParName(i)) + " = " + NumErrScien(ampl_func_t_limits->GetParameter(i), ampl_func_t_limits->GetParError(i), ampl_func_t_limits->GetParName(i))).c_str(), "");
+
+    limits_no_cl_legend_ampl->Draw();
+
+    limits_no_cl_canvas->cd(2);
+    multi_phase_lim_no_Cl->Draw("ape");
+
+    TLegend *limits_no_cl_legend_phase{new TLegend()};
+    // limits_no_cl_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    limits_no_cl_legend_phase->SetNColumns(3);
+    // RIGA 1
+    limits_no_cl_legend_phase->AddEntry(phase_graph_limits[0], "Phase V_S", "ep");
+    limits_no_cl_legend_phase->AddEntry((TObject *)0, "", "");
+    limits_no_cl_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    limits_no_cl_legend_phase->AddEntry(phase_graph_limits[1], "Phase V_Woofer", "ep");
+    limits_no_cl_legend_phase->AddEntry(phase_func_w_limits, "Phase V_Woofer Fit", "l");
+    limits_no_cl_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_w_limits->GetChisquare() / phase_func_w_limits->GetNDF())).c_str()), "");
+    // RIGA 3
+    for (int i = 0; i != phase_func_w_limits->GetNpar(); ++i)
+        limits_no_cl_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_w_limits->GetParName(i)) + " = " + NumErrScien(phase_func_w_limits->GetParameter(i), phase_func_w_limits->GetParError(i), phase_func_w_limits->GetParName(i))).c_str(), "");
+    // RIGA 4
+    limits_no_cl_legend_phase->AddEntry(phase_graph_limits[2], "Phase V_Tweeter", "ep");
+    limits_no_cl_legend_phase->AddEntry(phase_func_t_limits, "Phase V_Tweeter Fit", "l");
+    limits_no_cl_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_t_limits->GetChisquare() / phase_func_t_limits->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != phase_func_t_limits->GetNpar(); ++i)
+        limits_no_cl_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_t_limits->GetParName(i)) + " = " + NumErrScien(phase_func_t_limits->GetParameter(i), phase_func_t_limits->GetParError(i), phase_func_t_limits->GetParName(i))).c_str(), "");
+
+    limits_no_cl_legend_phase->Draw();
+
+    // print_res
+    std::ofstream limits_no_Cl_file("./risultati_finali/Sweep_" + GetSweepRange() + "/limits_no_Cl_" + std::to_string(GetVoltage()) + ".txt");
+    limits_no_Cl_file << std::setprecision(10);
+    limits_no_Cl_file << "Ampl_woofer:\n";
+    limits_no_Cl_file << "\tFit Status: " + (ampl_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_woofer_fit_res) + ")")) << '\n';
+    limits_no_Cl_file << "\tChi^2: " << ampl_func_w_limits->GetChisquare() << '\n';
+    limits_no_Cl_file << "\tNdf: " << ampl_func_w_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tCHI RIDOTTO: " << ampl_func_w_limits->GetChisquare() / ampl_func_w_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_w_limits->GetNpar(); ++i)
+        limits_no_Cl_file << "\t\t[" << i << "] - " << ampl_func_w_limits->GetParName(i) << " = " << ampl_func_w_limits->GetParameter(i) << " +- " << ampl_func_w_limits->GetParError(i) << '\n';
+    limits_no_Cl_file << "Ampl_tweeter:\n";
+    limits_no_Cl_file << "\tFit Status: " + (ampl_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_tweeter_fit_res) + ")")) << '\n';
+    limits_no_Cl_file << "\tChi^2: " << ampl_func_t_limits->GetChisquare() << '\n';
+    limits_no_Cl_file << "\tNdf: " << ampl_func_t_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tCHI RIDOTTO: " << ampl_func_t_limits->GetChisquare() / ampl_func_t_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_t_limits->GetNpar(); ++i)
+        limits_no_Cl_file << "\t\t[" << i << "] - " << ampl_func_t_limits->GetParName(i) << " = " << ampl_func_t_limits->GetParameter(i) << " +- " << ampl_func_t_limits->GetParError(i) << '\n';
+    limits_no_Cl_file << "Phase_woofer:\n";
+    limits_no_Cl_file << "\tFit Status: " + (phase_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_woofer_fit_res) + ")")) << '\n';
+    limits_no_Cl_file << "\tChi^2: " << phase_func_w_limits->GetChisquare() << '\n';
+    limits_no_Cl_file << "\tNdf: " << phase_func_w_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tCHI RIDOTTO: " << phase_func_w_limits->GetChisquare() / phase_func_w_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_w_limits->GetNpar(); ++i)
+        limits_no_Cl_file << "\t\t[" << i << "] - " << phase_func_w_limits->GetParName(i) << " = " << phase_func_w_limits->GetParameter(i) << " +- " << phase_func_w_limits->GetParError(i) << '\n';
+    limits_no_Cl_file << "Phase_tweeter:\n";
+    limits_no_Cl_file << "\tFit Status: " + (phase_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_tweeter_fit_res) + ")")) << '\n';
+    limits_no_Cl_file << "\tChi^2: " << phase_func_t_limits->GetChisquare() << '\n';
+    limits_no_Cl_file << "\tNdf: " << phase_func_t_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tCHI RIDOTTO: " << phase_func_t_limits->GetChisquare() / phase_func_t_limits->GetNDF() << '\n';
+    limits_no_Cl_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_t_limits->GetNpar(); ++i)
+        limits_no_Cl_file << "\t\t[" << i << "] - " << phase_func_t_limits->GetParName(i) << " = " << phase_func_t_limits->GetParameter(i) << " +- " << phase_func_t_limits->GetParError(i) << '\n';
+    limits_no_Cl_file.close();
+
+    // LIMITS - Cl 2 -----------------------------------------------------------------
+    TGraphErrors *ampl_graph_limits_Cl2{new TGraphErrors(*ampl_graph_limits[1])};
+    TGraphErrors *phase_graph_limits_Cl2{new TGraphErrors(*phase_graph_limits[1])};
+
+    ampl_func_w_2_limits->SetParLimits(3, 0, 1e-6);
+    phase_func_w_2_limits->SetParLimits(3, 0, 1e-6);
+    ampl_woofer_fit_res = ampl_graph_limits_Cl2->Fit(ampl_func_w_2_limits, "Q, M, E");
+    std::cout << std::endl;
+
+    phase_woofer_fit_res = phase_graph_limits_Cl2->Fit(phase_func_w_2_limits, "Q, M, E");
+    std::cout << std::endl;
+
+    auto multi_ampl_lim_Cl_2{new TMultiGraph};
+    auto multi_phase_lim_Cl_2{new TMultiGraph};
+
+    multi_ampl_lim_Cl_2->Add(ampl_graph_limits[0]);
+    multi_phase_lim_Cl_2->Add(phase_graph_limits[0]);
+    multi_ampl_lim_Cl_2->Add(ampl_graph_limits_Cl2);
+    multi_phase_lim_Cl_2->Add(phase_graph_limits_Cl2);
+    multi_ampl_lim_Cl_2->Add(ampl_graph_limits[2]);
+    multi_phase_lim_Cl_2->Add(phase_graph_limits[2]);
+
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_2, "Q, M, E");
+    // std::cout << std::endl;
+
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_2_limits, "Q, M, E");
+    // std::cout << std::endl;
+
+    // auto multi_ampl_lim_Cl_2{new TMultiGraph};
+    // auto multi_phase_lim_Cl_2{new TMultiGraph};
+
+    // for (int i = 0; i != 3; ++i)
+    // {
+    //     multi_ampl_lim_Cl_2->Add(ampl_graph[i]);
+    //     multi_phase_lim_Cl_2->Add(phase_graph[i]);
+    // }
+    multi_ampl_lim_Cl_2->SetTitle("Amplitude - Frequency (Limited, Cl)");
+    multi_phase_lim_Cl_2->SetTitle("Phase - Frequency (Limited, Cl)");
+
+    multi_ampl_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_lim_Cl_2->GetYaxis()->SetTitle("Amplitude (V)");
+    multi_phase_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_lim_Cl_2->GetYaxis()->SetTitle("Phase (rad)");
+    multi_phase_lim_Cl_2->GetYaxis()->SetTitleOffset(1.2f);
+
+    TCanvas *limits_Cl_2_canvas{new TCanvas{"limits_Cl_2_canvas", "Amplitude and Phase Limits_Cl_2", 0, 0, 1300, 700}};
+    limits_Cl_2_canvas->Divide(2, 1);
+    limits_Cl_2_canvas->cd(1);
+    multi_ampl_lim_Cl_2->Draw("ape");
+
+    TLegend *limits_cl_2_legend_ampl{new TLegend()};
+    // limits_cl_2_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    limits_cl_2_legend_ampl->SetNColumns(3);
+    // RIGA 1
+    limits_cl_2_legend_ampl->AddEntry(ampl_graph_limits[0], "Amplitude V_S", "ep");
+    limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    limits_cl_2_legend_ampl->AddEntry(ampl_graph_limits_Cl2, "Amplitude V_Woofer", "ep");
+    limits_cl_2_legend_ampl->AddEntry(ampl_func_w_2_limits, "Amplitude V_Woofer Fit", "l");
+    limits_cl_2_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_w_2_limits->GetChisquare() / ampl_func_w_2_limits->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != ampl_func_w_2_limits->GetNpar(); ++i)
+        limits_cl_2_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_w_2_limits->GetParName(i)) + " = " + NumErrScien(ampl_func_w_2_limits->GetParameter(i), ampl_func_w_2_limits->GetParError(i), ampl_func_w_2_limits->GetParName(i))).c_str(), "");
+    limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    limits_cl_2_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 5
+    limits_cl_2_legend_ampl->AddEntry(ampl_graph_limits[2], "Amplitude V_Tweeter", "ep");
+    limits_cl_2_legend_ampl->AddEntry(ampl_func_t_limits, "Amplitude V_Tweeter Fit", "l");
+    limits_cl_2_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_t_limits->GetChisquare() / ampl_func_t_limits->GetNDF())).c_str()), "");
+    // RIGA 6
+    for (int i = 0; i != ampl_func_t_limits->GetNpar(); ++i)
+        limits_cl_2_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_t_limits->GetParName(i)) + " = " + NumErrScien(ampl_func_t_limits->GetParameter(i), ampl_func_t_limits->GetParError(i), ampl_func_t_limits->GetParName(i))).c_str(), "");
+
+    limits_cl_2_legend_ampl->Draw();
+
+    limits_Cl_2_canvas->cd(2);
+    multi_phase_lim_Cl_2->Draw("ape");
+
+    TLegend *limits_cl_2_legend_phase{new TLegend()};
+    // limits_cl_2_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    limits_cl_2_legend_phase->SetNColumns(3);
+    // RIGA 1
+    limits_cl_2_legend_phase->AddEntry(phase_graph_limits[0], "Phase V_S", "ep");
+    limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    limits_cl_2_legend_phase->AddEntry(phase_graph_limits_Cl2, "Phase V_Woofer", "ep");
+    limits_cl_2_legend_phase->AddEntry(phase_func_w_2_limits, "Phase V_Woofer Fit", "l");
+    limits_cl_2_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_w_2_limits->GetChisquare() / phase_func_w_2_limits->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != phase_func_w_2_limits->GetNpar(); ++i)
+        limits_cl_2_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_w_2_limits->GetParName(i)) + " = " + NumErrScien(phase_func_w_2_limits->GetParameter(i), phase_func_w_2_limits->GetParError(i), phase_func_w_2_limits->GetParName(i))).c_str(), "");
+    limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    limits_cl_2_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 4
+    limits_cl_2_legend_phase->AddEntry(phase_graph_limits[2], "Phase V_Tweeter", "ep");
+    limits_cl_2_legend_phase->AddEntry(phase_func_t_limits, "Phase V_Tweeter Fit", "l");
+    limits_cl_2_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_t_limits->GetChisquare() / phase_func_t_limits->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != phase_func_t_limits->GetNpar(); ++i)
+        limits_cl_2_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_t_limits->GetParName(i)) + " = " + NumErrScien(phase_func_t_limits->GetParameter(i), phase_func_t_limits->GetParError(i), phase_func_t_limits->GetParName(i))).c_str(), "");
+
+    limits_cl_2_legend_phase->Draw();
+
+    // print_res
+    std::ofstream limits_Cl_2_file("./risultati_finali/Sweep_" + GetSweepRange() + "/limits_Cl_2_" + std::to_string(GetVoltage()) + ".txt");
+    limits_Cl_2_file << std::setprecision(10);
+    limits_Cl_2_file << "Ampl_woofer:\n";
+    limits_Cl_2_file << "\tFit Status: " + (ampl_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_woofer_fit_res) + ")")) << '\n';
+    limits_Cl_2_file << "\tChi^2: " << ampl_func_w_2_limits->GetChisquare() << '\n';
+    limits_Cl_2_file << "\tNdf: " << ampl_func_w_2_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tCHI RIDOTTO: " << ampl_func_w_2_limits->GetChisquare() / ampl_func_w_2_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_w_2_limits->GetNpar(); ++i)
+        limits_Cl_2_file << "\t\t[" << i << "] - " << ampl_func_w_2_limits->GetParName(i) << " = " << ampl_func_w_2_limits->GetParameter(i) << " +- " << ampl_func_w_2_limits->GetParError(i) << '\n';
+    limits_Cl_2_file << "Ampl_tweeter:\n";
+    limits_Cl_2_file << "\tFit Status: " + (ampl_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_tweeter_fit_res) + ")")) << '\n';
+    limits_Cl_2_file << "\tChi^2: " << ampl_func_t_limits->GetChisquare() << '\n';
+    limits_Cl_2_file << "\tNdf: " << ampl_func_t_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tCHI RIDOTTO: " << ampl_func_t_limits->GetChisquare() / ampl_func_t_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_t_limits->GetNpar(); ++i)
+        limits_Cl_2_file << "\t\t[" << i << "] - " << ampl_func_t_limits->GetParName(i) << " = " << ampl_func_t_limits->GetParameter(i) << " +- " << ampl_func_t_limits->GetParError(i) << '\n';
+    limits_Cl_2_file << "Phase_woofer:\n";
+    limits_Cl_2_file << "\tFit Status: " + (phase_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_woofer_fit_res) + ")")) << '\n';
+    limits_Cl_2_file << "\tChi^2: " << phase_func_w_2_limits->GetChisquare() << '\n';
+    limits_Cl_2_file << "\tNdf: " << phase_func_w_2_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tCHI RIDOTTO: " << phase_func_w_2_limits->GetChisquare() / phase_func_w_2_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_w_2_limits->GetNpar(); ++i)
+        limits_Cl_2_file << "\t\t[" << i << "] - " << phase_func_w_2_limits->GetParName(i) << " = " << phase_func_w_2_limits->GetParameter(i) << " +- " << phase_func_w_2_limits->GetParError(i) << '\n';
+    limits_Cl_2_file << "Phase_tweeter:\n";
+    limits_Cl_2_file << "\tFit Status: " + (phase_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_tweeter_fit_res) + ")")) << '\n';
+    limits_Cl_2_file << "\tChi^2: " << phase_func_t_limits->GetChisquare() << '\n';
+    limits_Cl_2_file << "\tNdf: " << phase_func_t_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tCHI RIDOTTO: " << phase_func_t_limits->GetChisquare() / phase_func_t_limits->GetNDF() << '\n';
+    limits_Cl_2_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_t_limits->GetNpar(); ++i)
+        limits_Cl_2_file << "\t\t[" << i << "] - " << phase_func_t_limits->GetParName(i) << " = " << phase_func_t_limits->GetParameter(i) << " +- " << phase_func_t_limits->GetParError(i) << '\n';
+    limits_Cl_2_file.close();
+
+    // NO LIMITS - Cl 3 -----------------------------------------------------------------
+    TGraphErrors *ampl_graph_limits_Cl3{new TGraphErrors(*ampl_graph_limits[1])};
+    TGraphErrors *phase_graph_limits_Cl3{new TGraphErrors(*phase_graph_limits[1])};
+
+    ampl_func_w_3_limits->SetParLimits(3, 0, 1e-6);
+    phase_func_w_3_limits->SetParLimits(3, 0, 1e-6);
+    ampl_woofer_fit_res = ampl_graph_limits_Cl3->Fit(ampl_func_w_3_limits, "Q, M, E");
+    std::cout << std::endl;
+
+    phase_woofer_fit_res = phase_graph_limits_Cl3->Fit(phase_func_w_3_limits, "Q, M, E");
+    std::cout << std::endl;
+
+    auto multi_ampl_lim_Cl_3{new TMultiGraph};
+    auto multi_phase_lim_Cl_3{new TMultiGraph};
+
+    multi_ampl_lim_Cl_3->Add(ampl_graph_limits[0]);
+    multi_phase_lim_Cl_3->Add(phase_graph_limits[0]);
+    multi_ampl_lim_Cl_3->Add(ampl_graph_limits_Cl3);
+    multi_phase_lim_Cl_3->Add(phase_graph_limits_Cl3);
+    multi_ampl_lim_Cl_3->Add(ampl_graph_limits[2]);
+    multi_phase_lim_Cl_3->Add(phase_graph_limits[2]);
+
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_3_limits, "Q, M, E");
+    // std::cout << std::endl;
+
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_3_limits, "Q, M, E");
+    // std::cout << std::endl;
+
+    // auto multi_ampl_lim_Cl_3{new TMultiGraph};
+    // auto multi_phase_lim_Cl_3{new TMultiGraph};
+
+    // for (int i = 0; i != 3; ++i)
+    // {
+    //     multi_ampl_lim_Cl_3->Add(ampl_graph[i]);
+    //     multi_phase_lim_Cl_3->Add(phase_graph[i]);
+    // }
+
+    multi_ampl_lim_Cl_3->SetTitle("Amplitude - Frequency (Limited, Cl)");
+    multi_phase_lim_Cl_3->SetTitle("Phase - Frequency (Limited, Cl)");
+
+    multi_ampl_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_lim_Cl_3->GetYaxis()->SetTitle("Amplitude (V)");
+    multi_phase_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_lim_Cl_3->GetYaxis()->SetTitle("Phase (rad)");
+    multi_phase_lim_Cl_3->GetYaxis()->SetTitleOffset(1.2f);
+
+    TCanvas *limits_Cl_3_canvas{new TCanvas{"limits_Cl_3_canvas", "Amplitude and Phase Limits_Cl_3", 0, 0, 1300, 700}};
+    limits_Cl_3_canvas->Divide(2, 1);
+    limits_Cl_3_canvas->cd(1);
+    multi_ampl_lim_Cl_3->Draw("ape");
+
+    TLegend *limits_cl_3_legend_ampl{new TLegend()};
+    // limits_cl_3_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    limits_cl_3_legend_ampl->SetNColumns(3);
+    // RIGA 1
+    limits_cl_3_legend_ampl->AddEntry(ampl_graph_limits[0], "Amplitude V_S", "ep");
+    limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    limits_cl_3_legend_ampl->AddEntry(ampl_graph_limits_Cl2, "Amplitude V_Woofer", "ep");
+    limits_cl_3_legend_ampl->AddEntry(ampl_func_w_3_limits, "Amplitude V_Woofer Fit", "l");
+    limits_cl_3_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_w_3_limits->GetChisquare() / ampl_func_w_3_limits->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != ampl_func_w_3_limits->GetNpar(); ++i)
+        limits_cl_3_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_w_3_limits->GetParName(i)) + " = " + NumErrScien(ampl_func_w_3_limits->GetParameter(i), ampl_func_w_3_limits->GetParError(i), ampl_func_w_3_limits->GetParName(i))).c_str(), "");
+    limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    limits_cl_3_legend_ampl->AddEntry((TObject *)0, "", "");
+    // RIGA 5
+    limits_cl_3_legend_ampl->AddEntry(ampl_graph_limits[2], "Amplitude V_Tweeter", "ep");
+    limits_cl_3_legend_ampl->AddEntry(ampl_func_t_limits, "Amplitude V_Tweeter Fit", "l");
+    limits_cl_3_legend_ampl->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(ampl_func_t_limits->GetChisquare() / ampl_func_t_limits->GetNDF())).c_str()), "");
+    // RIGA 6
+    for (int i = 0; i != ampl_func_t_limits->GetNpar(); ++i)
+        limits_cl_3_legend_ampl->AddEntry((TObject *)0, (std::string(ampl_func_t_limits->GetParName(i)) + " = " + NumErrScien(ampl_func_t_limits->GetParameter(i), ampl_func_t_limits->GetParError(i), ampl_func_t_limits->GetParName(i))).c_str(), "");
+
+    limits_cl_3_legend_ampl->Draw();
+
+    limits_Cl_3_canvas->cd(2);
+    multi_phase_lim_Cl_3->Draw("ape");
+
+    TLegend *limits_cl_3_legend_phase{new TLegend()};
+    // limits_cl_3_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    limits_cl_3_legend_phase->SetNColumns(3);
+    // RIGA 1
+    limits_cl_3_legend_phase->AddEntry(phase_graph_limits[0], "Phase V_S", "ep");
+    limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 2
+    limits_cl_3_legend_phase->AddEntry(phase_graph_limits_Cl2, "Phase V_Woofer", "ep");
+    limits_cl_3_legend_phase->AddEntry(phase_func_w_3_limits, "Phase V_Woofer Fit", "l");
+    limits_cl_3_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_w_3_limits->GetChisquare() / phase_func_w_3_limits->GetNDF())).c_str()), "");
+    // RIGA 3 e 4
+    for (int i = 0; i != phase_func_w_3_limits->GetNpar(); ++i)
+        limits_cl_3_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_w_3_limits->GetParName(i)) + " = " + NumErrScien(phase_func_w_3_limits->GetParameter(i), phase_func_w_3_limits->GetParError(i), phase_func_w_3_limits->GetParName(i))).c_str(), "");
+    limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    limits_cl_3_legend_phase->AddEntry((TObject *)0, "", "");
+    // RIGA 4
+    limits_cl_3_legend_phase->AddEntry(phase_graph_limits[2], "Phase V_Tweeter", "ep");
+    limits_cl_3_legend_phase->AddEntry(phase_func_t_limits, "Phase V_Tweeter Fit", "l");
+    limits_cl_3_legend_phase->AddEntry((TObject *)0, (("#tilde{#chi}^{2} = " + std::to_string(phase_func_t_limits->GetChisquare() / phase_func_t_limits->GetNDF())).c_str()), "");
+    // RIGA 5
+    for (int i = 0; i != phase_func_t_limits->GetNpar(); ++i)
+        limits_cl_3_legend_phase->AddEntry((TObject *)0, (std::string(phase_func_t_limits->GetParName(i)) + " = " + NumErrScien(phase_func_t_limits->GetParameter(i), phase_func_t_limits->GetParError(i), phase_func_t_limits->GetParName(i))).c_str(), "");
+
+    limits_cl_3_legend_phase->Draw();
+
+    // print_res
+    std::ofstream limits_Cl_3_file("./risultati_finali/Sweep_" + GetSweepRange() + "/limits_Cl_3_" + std::to_string(GetVoltage()) + ".txt");
+    limits_Cl_3_file << std::setprecision(10);
+    limits_Cl_3_file << "Ampl_woofer:\n";
+    limits_Cl_3_file << "\tFit Status: " + (ampl_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_woofer_fit_res) + ")")) << '\n';
+    limits_Cl_3_file << "\tChi^2: " << ampl_func_w_3_limits->GetChisquare() << '\n';
+    limits_Cl_3_file << "\tNdf: " << ampl_func_w_3_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tCHI RIDOTTO: " << ampl_func_w_3_limits->GetChisquare() / ampl_func_w_3_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_w_3_limits->GetNpar(); ++i)
+        limits_Cl_3_file << "\t\t[" << i << "] - " << ampl_func_w_3_limits->GetParName(i) << " = " << ampl_func_w_3_limits->GetParameter(i) << " +- " << ampl_func_w_3_limits->GetParError(i) << '\n';
+    limits_Cl_3_file << "Ampl_tweeter:\n";
+    limits_Cl_3_file << "\tFit Status: " + (ampl_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(ampl_tweeter_fit_res) + ")")) << '\n';
+    limits_Cl_3_file << "\tChi^2: " << ampl_func_t_limits->GetChisquare() << '\n';
+    limits_Cl_3_file << "\tNdf: " << ampl_func_t_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tCHI RIDOTTO: " << ampl_func_t_limits->GetChisquare() / ampl_func_t_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != ampl_func_t_limits->GetNpar(); ++i)
+        limits_Cl_3_file << "\t\t[" << i << "] - " << ampl_func_t_limits->GetParName(i) << " = " << ampl_func_t_limits->GetParameter(i) << " +- " << ampl_func_t_limits->GetParError(i) << '\n';
+    limits_Cl_3_file << "Phase_woofer:\n";
+    limits_Cl_3_file << "\tFit Status: " + (phase_woofer_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_woofer_fit_res) + ")")) << '\n';
+    limits_Cl_3_file << "\tChi^2: " << phase_func_w_3_limits->GetChisquare() << '\n';
+    limits_Cl_3_file << "\tNdf: " << phase_func_w_3_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tCHI RIDOTTO: " << phase_func_w_3_limits->GetChisquare() / phase_func_w_3_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_w_3_limits->GetNpar(); ++i)
+        limits_Cl_3_file << "\t\t[" << i << "] - " << phase_func_w_3_limits->GetParName(i) << " = " << phase_func_w_3_limits->GetParameter(i) << " +- " << phase_func_w_3_limits->GetParError(i) << '\n';
+    limits_Cl_3_file << "Phase_tweeter:\n";
+    limits_Cl_3_file << "\tFit Status: " + (phase_tweeter_fit_res == 0 ? "OK" : ("ERROR(" + std::to_string(phase_tweeter_fit_res) + ")")) << '\n';
+    limits_Cl_3_file << "\tChi^2: " << phase_func_t_limits->GetChisquare() << '\n';
+    limits_Cl_3_file << "\tNdf: " << phase_func_t_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tCHI RIDOTTO: " << phase_func_t_limits->GetChisquare() / phase_func_t_limits->GetNDF() << '\n';
+    limits_Cl_3_file << "\tParameters: \n";
+    for (int i = 0; i != phase_func_t_limits->GetNpar(); ++i)
+        limits_Cl_3_file << "\t\t[" << i << "] - " << phase_func_t_limits->GetParName(i) << " = " << phase_func_t_limits->GetParameter(i) << " +- " << phase_func_t_limits->GetParError(i) << '\n';
+    limits_Cl_3_file.close();
 }
