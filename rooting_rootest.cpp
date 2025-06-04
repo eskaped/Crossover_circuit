@@ -1279,7 +1279,7 @@ void rooting_rootest(Int_t input_n_blocks)
     Double_t const L{4.7154000E-02};
     Double_t const Relvis{5.4406400E+01};
 
-    Double_t V0{GetVoltage() != 7 ? GetVoltage() : 7.5};
+    Double_t V0{(GetVoltage() != 7 ? GetVoltage() : 7.5) / 2.};
 
     Double_t const Rw_err{1.4737707E-01};
     Double_t const Rt_err{1.0639549E-01};
@@ -1662,17 +1662,17 @@ void rooting_rootest(Int_t input_n_blocks)
     // ampl_func_VS->SetParLimits(6, V0 - V0/N_SIGMA_VS, V0 + V0/N_SIGMA_VS);
     // ampl_func_VS->SetParLimits(7, Relvis - N_SIGMA_VS * Relvis_err, Relvis + N_SIGMA_VS * Relvis_err);
 
-    ampl_func_VS->FixParameter(0, Rw);
-    ampl_func_VS->FixParameter(1, Rl);
+    // ampl_func_VS->FixParameter(0, Rw);
+    // ampl_func_VS->FixParameter(1, Rl);
     // ampl_func_VS->FixParameter(2, L );
-    ampl_func_VS->FixParameter(3, Rt );
-    ampl_func_VS->FixParameter(4, Rl1Rl2);
-    ampl_func_VS->FixParameter(5, C1C2 );
-    ampl_func_VS->FixParameter(6, V0 );
-    ampl_func_VS->FixParameter(7, Relvis);
+    // ampl_func_VS->FixParameter(3, Rt );
+    // ampl_func_VS->FixParameter(4, Rl1Rl2);
+    // ampl_func_VS->FixParameter(5, C1C2 );
+    // ampl_func_VS->FixParameter(6, V0 );
+    // ampl_func_VS->FixParameter(7, Relvis);
     // ampl_func_VS->FixParameter()
     std::cout << "------------------------START FITTING VS--------------------------------\n";
-    ampl_graph[0]->Fit(ampl_func_VS, "M, E");
+    ampl_graph[0]->Fit(ampl_func_VS, "V");
     std::cout << "------------------------END FITTING VS----------------------------------\n";
 
     // FITTING WITHOUT LIMITS (No Cl)-------------------------
