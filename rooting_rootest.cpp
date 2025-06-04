@@ -283,7 +283,7 @@ Double_t ampl_woofer(Double_t *f, Double_t *par)
     Double_t Rw{par[0]};
     Double_t Rl{par[1]};
     Double_t L{par[2]};
-    return (Vs * Rw) * pow((Rl + Rw) * (Rl + Rw) + (w * L) * (w * L), -0.5);
+    return (Vs * Rw) / sqrt((Rl + Rw) * (Rl + Rw) + (w * L) * (w * L));
 }
 
 Double_t ampl_woofer_2(Double_t *f, Double_t *par)
@@ -1267,6 +1267,11 @@ void FastFourierTransform(int n_block, int only_Vi)
 }
 void rooting_rootest(Int_t input_n_blocks)
 {
+    Double_t MIN_FIT = 500;
+    Double_t MAX_FIT = 700;
+
+
+
     N_BLOCKS = input_n_blocks;
     SamuStyle();
     std::ifstream file_count{"./input_data/ampl_data"};
@@ -1487,17 +1492,17 @@ void rooting_rootest(Int_t input_n_blocks)
     ampl_func_VS = new TF1{"ampl_func_VS", ampl_Vs, 0., 1000., 8};
     // ampl_func_VS = new TF1{"ampl_func_VS", "[0]*x+[1]", 0., 1000.};
 
-    TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer, 0., 1000., 3}};
-    TF1 *ampl_func_t{new TF1{"ampl_func_t", ampl_tweeter, 0., 1000., 3}};
-    TF1 *phase_func_w{new TF1{"phase_func_w", phase_woofer, 0., 1000., 3}};
-    TF1 *phase_func_t{new TF1{"phase_func_t", phase_tweeter, 0., 1000., 3}};
+    TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer, 0., 25000., 3}};
+    TF1 *ampl_func_t{new TF1{"ampl_func_t", ampl_tweeter, 0., 25000., 3}};
+    TF1 *phase_func_w{new TF1{"phase_func_w", phase_woofer, 0., 25000., 3}};
+    TF1 *phase_func_t{new TF1{"phase_func_t", phase_tweeter, 0., 25000., 3}};
 
     // with cl------------------------------------------------
-    TF1 *ampl_func_w_2{new TF1{"ampl_func_w", ampl_woofer_2, 0., 1000., 4}};
-    TF1 *phase_func_w_2{new TF1{"phase_func_w", phase_woofer_2, 0., 1000., 4}};
+    TF1 *ampl_func_w_2{new TF1{"ampl_func_w", ampl_woofer_2, 0., 25000., 3}};
+    TF1 *phase_func_w_2{new TF1{"phase_func_w", phase_woofer_2, 0., 25000., 3}};
 
-    TF1 *ampl_func_w_3{new TF1{"ampl_func_w", ampl_woofer_2, 0., 1000., 4}};
-    TF1 *phase_func_w_3{new TF1{"phase_func_w", phase_woofer_2, 0., 1000., 4}};
+    TF1 *ampl_func_w_3{new TF1{"ampl_func_w", ampl_woofer_2, 0., 25000., 3}};
+    TF1 *phase_func_w_3{new TF1{"phase_func_w", phase_woofer_2, 0., 25000., 3}};
     // with cl------------------------------------------------
 
     ampl_func_VS->SetNpx(100000);
@@ -1652,7 +1657,7 @@ void rooting_rootest(Int_t input_n_blocks)
 
     // FITTING VS
     std::cout << "\n\n\n\n";
-    Double_t N_SIGMA_VS = 10;
+    // Double_t N_SIGMA_VS = 10;
     // ampl_func_VS->SetParLimits(0, Rw - N_SIGMA_VS * Rw_err, Rw + N_SIGMA_VS * Rw_err);
     // ampl_func_VS->SetParLimits(1, Rl - N_SIGMA_VS * Rl_err, Rl + N_SIGMA_VS * Rl_err);
     // ampl_func_VS->SetParLimits(2, L - N_SIGMA_VS * L_err, L + N_SIGMA_VS * L_err);
@@ -1672,20 +1677,24 @@ void rooting_rootest(Int_t input_n_blocks)
     // ampl_func_VS->FixParameter(7, Relvis);
     // ampl_func_VS->FixParameter()
     std::cout << "------------------------START FITTING VS--------------------------------\n";
-    ampl_graph[0]->Fit(ampl_func_VS, "V");
+    ampl_graph[0]->Fit(ampl_func_VS, "M, E");
     std::cout << "------------------------END FITTING VS----------------------------------\n";
 
     // FITTING WITHOUT LIMITS (No Cl)-------------------------
-
+    // 1/(2pi)*sqrt((C*C*(R_w*R_w*(R_t+R_l1l2)*(R_t+R_l1l2) - R_t*R_t*(R_l+R_w)*(R_l+R_w)) + sqrt(C*C*C*C*(R_w*R_w*(R_t+R_l1l2)*(R_t+R_l1l2) - R_t*R_t*(R_l+R_w)*(R_l+R_w))*(R_w*R_w*(R_t+R_l1l2)*(R_t+R_l1l2) - R_t*R_t*(R_l+R_w)*(R_l+R_w)) + 4 *R_w*R_w*R_t*R_t*L*L*C*C ))/(2*L*L*C*C*R_t*R_t))
+    //R_w, R_t, R_l, R_l1l2, L, C
+    //[220.32000,0.14737707], [220.19000, 0.10639549], [120.18250, 0.48897001], [121.83500, 0.45793013],[0.047154000, 0.00047154000],[0.0000014225000, 0.000000014225000]
+    
+    //[192.0176023,0.109684324461364], [155.7258872, 0.0430284572390734], [108.6318597, 0.0721233730001343], [87.27564753, 0.0279570867606535],[0.04416795751, .000031079980085238],[0.000001975545041,.000000000671207244439028]
     ROOT::Math::MinimizerOptions::SetDefaultStrategy(2);
-    int ampl_woofer_fit_res{ampl_graph[1]->Fit(ampl_func_w, "Q, M, E")};
+    int ampl_woofer_fit_res{ampl_graph[1]->Fit(ampl_func_w, "Q, M, E", "", MIN_FIT, MAX_FIT)};
     std::cout << std::endl;
-    int ampl_tweeter_fit_res{ampl_graph[2]->Fit(ampl_func_t, "Q, M, E")};
+    int ampl_tweeter_fit_res{ampl_graph[2]->Fit(ampl_func_t, "Q, M, E", "", MIN_FIT, MAX_FIT)};
     std::cout << std::endl;
 
-    int phase_woofer_fit_res{phase_graph[1]->Fit(phase_func_w, "Q, M, E")};
+    int phase_woofer_fit_res{phase_graph[1]->Fit(phase_func_w, "Q, M, E","", MIN_FIT, MAX_FIT)};
     std::cout << std::endl;
-    int phase_tweeter_fit_res{phase_graph[2]->Fit(phase_func_t, "Q, M, E")};
+    int phase_tweeter_fit_res{phase_graph[2]->Fit(phase_func_t, "Q, M, E","", MIN_FIT, MAX_FIT)};
     std::cout << std::endl;
 
     auto multi_ampl_no_lim_no_Cl{new TMultiGraph};
@@ -1723,6 +1732,16 @@ void rooting_rootest(Int_t input_n_blocks)
     gPad->SetTopMargin(0.2);
 
     multi_ampl_no_lim_no_Cl->Draw("ape");
+    TF1* ampl_func_w_ghost = new TF1(*ampl_func_w);
+    TF1* ampl_func_t_ghost = new TF1(*ampl_func_t);
+    ampl_func_w_ghost->SetLineColorAlpha(kRed+2,0.1);
+    ampl_func_t_ghost->SetLineColorAlpha(kBlue+2,0.1);
+    ampl_func_w_ghost->SetRange(0., 25000);
+    ampl_func_t_ghost->SetRange(0., 25000);
+    ampl_func_w_ghost->Draw("SAME");
+    ampl_func_t_ghost->Draw("SAME");
+    // ampl_func_w->Draw("Same");
+    // ampl_func_t->Draw("Same");
 
     TPad *no_limits_no_cl_pad_residual_ampl = new TPad("pad", "pad", 0., 0., 1., 1.);
     no_limits_no_cl_pad_residual_ampl->SetTopMargin(0.8);
@@ -1794,6 +1813,14 @@ void rooting_rootest(Int_t input_n_blocks)
     gPad->SetTopMargin(0.2);
 
     multi_phase_no_lim_no_Cl->Draw("ape");
+    TF1* phase_func_w_ghost = new TF1(*phase_func_w);
+    TF1* phase_func_t_ghost = new TF1(*phase_func_t);
+    phase_func_w_ghost->SetLineColorAlpha(kRed+2,0.1);
+    phase_func_t_ghost->SetLineColorAlpha(kBlue+2,0.1);
+    phase_func_w_ghost->SetRange(0., 25000);
+    phase_func_t_ghost->SetRange(0., 25000);
+    phase_func_w_ghost->Draw("SAME");
+    phase_func_t_ghost->Draw("SAME");
 
     TPad *no_limits_no_cl_pad_residual_phase = new TPad("pad", "pad", 0., 0., 1., 1.);
     no_limits_no_cl_pad_residual_phase->SetTopMargin(0.8);
@@ -1914,10 +1941,10 @@ void rooting_rootest(Int_t input_n_blocks)
 
     ampl_func_w_2->SetParLimits(3, 0, 1e-6);
     phase_func_w_2->SetParLimits(3, 0, 1e-6);
-    ampl_woofer_fit_res = ampl_graph_no_limits_Cl2->Fit(ampl_func_w_2, "Q, M, E");
+    ampl_woofer_fit_res = ampl_graph_no_limits_Cl2->Fit(ampl_func_w_2, "Q, M, E, R");
     std::cout << std::endl;
 
-    phase_woofer_fit_res = phase_graph_no_limits_Cl2->Fit(phase_func_w_2, "Q, M, E");
+    phase_woofer_fit_res = phase_graph_no_limits_Cl2->Fit(phase_func_w_2, "Q, M, E, R");
     std::cout << std::endl;
 
     auto multi_ampl_no_lim_Cl_2{new TMultiGraph};
@@ -1931,10 +1958,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_no_lim_Cl_2->Add(ampl_graph[2]);
     multi_phase_no_lim_Cl_2->Add(phase_graph[2]);
 
-    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_2, "Q, M, E");
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_2, "Q, M, E, R");
     // std::cout << std::endl;
 
-    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_2, "Q, M, E");
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_2, "Q, M, E, R");
     // std::cout << std::endl;
 
     // auto multi_ampl_no_lim_Cl_2{new TMultiGraph};
@@ -2151,10 +2178,10 @@ void rooting_rootest(Int_t input_n_blocks)
 
     ampl_func_w_3->SetParLimits(3, 0, 1e-6);
     phase_func_w_3->SetParLimits(3, 0, 1e-6);
-    ampl_woofer_fit_res = ampl_graph_no_limits_Cl3->Fit(ampl_func_w_3, "Q, M, E");
+    ampl_woofer_fit_res = ampl_graph_no_limits_Cl3->Fit(ampl_func_w_3, "Q, M, E, R");
     std::cout << std::endl;
 
-    phase_woofer_fit_res = phase_graph_no_limits_Cl3->Fit(phase_func_w_3, "Q, M, E");
+    phase_woofer_fit_res = phase_graph_no_limits_Cl3->Fit(phase_func_w_3, "Q, M, E, R");
     std::cout << std::endl;
 
     auto multi_ampl_no_lim_Cl_3{new TMultiGraph};
@@ -2168,10 +2195,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_no_lim_Cl_3->Add(ampl_graph[2]);
     multi_phase_no_lim_Cl_3->Add(phase_graph[2]);
 
-    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_3, "Q, M, E");
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_3, "Q, M, E, R");
     // std::cout << std::endl;
 
-    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_3, "Q, M, E");
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_3, "Q, M, E, R");
     // std::cout << std::endl;
 
     // auto multi_ampl_no_lim_Cl_3{new TMultiGraph};
@@ -2499,14 +2526,14 @@ void rooting_rootest(Int_t input_n_blocks)
     // ampl_func_t_limits->SetRange(ampl_graph_limits[2]->GetPointX(0), ampl_graph_limits[2]->GetPointX(ampl_graph_limits[2]->GetN()) - 1);
     // FITTING WITH LIMITS (No Cl)-------------------------
 
-    ampl_woofer_fit_res = ampl_graph_limits[1]->Fit(ampl_func_w_limits, "Q, M, E");
+    ampl_woofer_fit_res = ampl_graph_limits[1]->Fit(ampl_func_w_limits, "Q, M, E, R");
     std::cout << std::endl;
-    ampl_tweeter_fit_res = ampl_graph_limits[2]->Fit(ampl_func_t_limits, "Q, M, E");
+    ampl_tweeter_fit_res = ampl_graph_limits[2]->Fit(ampl_func_t_limits, "Q, M, E, R");
     std::cout << std::endl;
 
-    phase_woofer_fit_res = phase_graph_limits[1]->Fit(phase_func_w_limits, "Q, M, E");
+    phase_woofer_fit_res = phase_graph_limits[1]->Fit(phase_func_w_limits, "Q, M, E, R");
     std::cout << std::endl;
-    phase_tweeter_fit_res = phase_graph_limits[2]->Fit(phase_func_t_limits, "Q, M, E");
+    phase_tweeter_fit_res = phase_graph_limits[2]->Fit(phase_func_t_limits, "Q, M, E, R");
     std::cout << std::endl;
 
     auto multi_ampl_lim_no_Cl{new TMultiGraph};
@@ -2720,10 +2747,10 @@ void rooting_rootest(Int_t input_n_blocks)
 
     ampl_func_w_2_limits->SetParLimits(3, 0, 1e-6);
     phase_func_w_2_limits->SetParLimits(3, 0, 1e-6);
-    ampl_woofer_fit_res = ampl_graph_limits_Cl2->Fit(ampl_func_w_2_limits, "Q, M, E");
+    ampl_woofer_fit_res = ampl_graph_limits_Cl2->Fit(ampl_func_w_2_limits, "Q, M, E, R");
     std::cout << std::endl;
 
-    phase_woofer_fit_res = phase_graph_limits_Cl2->Fit(phase_func_w_2_limits, "Q, M, E");
+    phase_woofer_fit_res = phase_graph_limits_Cl2->Fit(phase_func_w_2_limits, "Q, M, E, R");
     std::cout << std::endl;
 
     auto multi_ampl_lim_Cl_2{new TMultiGraph};
@@ -2737,10 +2764,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_lim_Cl_2->Add(ampl_graph_limits[2]);
     multi_phase_lim_Cl_2->Add(phase_graph_limits[2]);
 
-    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_2, "Q, M, E");
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_2, "Q, M, E, R");
     // std::cout << std::endl;
 
-    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_2_limits, "Q, M, E");
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_2_limits, "Q, M, E, R");
     // std::cout << std::endl;
 
     // auto multi_ampl_lim_Cl_2{new TMultiGraph};
@@ -2956,10 +2983,10 @@ void rooting_rootest(Int_t input_n_blocks)
 
     ampl_func_w_3_limits->SetParLimits(3, 0, 1e-6);
     phase_func_w_3_limits->SetParLimits(3, 0, 1e-6);
-    ampl_woofer_fit_res = ampl_graph_limits_Cl3->Fit(ampl_func_w_3_limits, "Q, M, E");
+    ampl_woofer_fit_res = ampl_graph_limits_Cl3->Fit(ampl_func_w_3_limits, "Q, M, E, R");
     std::cout << std::endl;
 
-    phase_woofer_fit_res = phase_graph_limits_Cl3->Fit(phase_func_w_3_limits, "Q, M, E");
+    phase_woofer_fit_res = phase_graph_limits_Cl3->Fit(phase_func_w_3_limits, "Q, M, E, R");
     std::cout << std::endl;
 
     auto multi_ampl_lim_Cl_3{new TMultiGraph};
@@ -2973,10 +3000,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_lim_Cl_3->Add(ampl_graph_limits[2]);
     multi_phase_lim_Cl_3->Add(phase_graph_limits[2]);
 
-    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_3_limits, "Q, M, E");
+    // ampl_woofer_fit_res = ampl_graph[1]->Fit(ampl_func_w_3_limits, "Q, M, E, R");
     // std::cout << std::endl;
 
-    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_3_limits, "Q, M, E");
+    // phase_woofer_fit_res = phase_graph[1]->Fit(phase_func_w_3_limits, "Q, M, E, R");
     // std::cout << std::endl;
 
     // auto multi_ampl_lim_Cl_3{new TMultiGraph};
