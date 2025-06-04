@@ -258,7 +258,7 @@ Double_t ampl_Vs(Double_t *f, Double_t *par)
     Double_t ReWT = (WTA + WTB) / ((WTA + WTB) * (WTA + WTB) + (WTC1 + WTC2) * (WTC1 + WTC2));
     Double_t ImWT = -(WTC1 + WTC2) / ((WTA + WTB) * (WTA + WTB) + (WTC1 + WTC2) * (WTC1 + WTC2));
 
-    Double_t ReH = 1 + Relvis * ((Relvis + ReWT) / ((Relvis + ReWT) * (Relvis + ReWT) + ImWT * ImWT));
+    Double_t ReH = 1 - Relvis * ((Relvis + ReWT) / ((Relvis + ReWT) * (Relvis + ReWT) + ImWT * ImWT));
     Double_t ImH = -Relvis * ((ImWT) / ((Relvis + ReWT) * (Relvis + ReWT) + ImWT * ImWT));
 
     return V0 * std::sqrt(ReH * ReH + ImH * ImH);
@@ -1484,8 +1484,8 @@ void rooting_rootest(Int_t input_n_blocks)
 
     // fitting
 
-    // ampl_func_VS = new TF1{"ampl_func_VS", ampl_Vs, 0., 1000., 8};
-    ampl_func_VS = new TF1{"ampl_func_VS", "[0]*x+[1]", 0., 1000.};
+    ampl_func_VS = new TF1{"ampl_func_VS", ampl_Vs, 0., 1000., 8};
+    // ampl_func_VS = new TF1{"ampl_func_VS", "[0]*x+[1]", 0., 1000.};
 
     TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer, 0., 1000., 3}};
     TF1 *ampl_func_t{new TF1{"ampl_func_t", ampl_tweeter, 0., 1000., 3}};
@@ -1523,14 +1523,14 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_w_3->SetNumberFitPoints(100000);
     // with cl------------------------------------------------
 
-    // ampl_func_VS->SetParName(0, "Rw");
-    // ampl_func_VS->SetParName(1, "Rl");
-    // ampl_func_VS->SetParName(2, "L");
-    // ampl_func_VS->SetParName(3, "Rt");
-    // ampl_func_VS->SetParName(4, "Rl1Rl2");
-    // ampl_func_VS->SetParName(5, "C1C2");
-    // ampl_func_VS->SetParName(6, "V0");
-    // ampl_func_VS->SetParName(7, "Relvis");
+    ampl_func_VS->SetParName(0, "Rw");
+    ampl_func_VS->SetParName(1, "Rl");
+    ampl_func_VS->SetParName(2, "L");
+    ampl_func_VS->SetParName(3, "Rt");
+    ampl_func_VS->SetParName(4, "Rl1Rl2");
+    ampl_func_VS->SetParName(5, "C1C2");
+    ampl_func_VS->SetParName(6, "V0");
+    ampl_func_VS->SetParName(7, "Relvis");
 
     ampl_func_w->SetParName(0, "Rw");
     ampl_func_w->SetParName(1, "Rl");
@@ -1571,14 +1571,14 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_w_3->SetParName(3, "Cl");
     // with cl------------------------------------------------
 
-    // ampl_func_VS->SetParameter(0, Rw);
-    // ampl_func_VS->SetParameter(1, Rl);
-    // ampl_func_VS->SetParameter(2, L);
-    // ampl_func_VS->SetParameter(3, Rt);
-    // ampl_func_VS->SetParameter(4, Rl1Rl2);
-    // ampl_func_VS->SetParameter(5, C1C2);
-    // ampl_func_VS->SetParameter(6, V0);
-    // ampl_func_VS->SetParameter(7, Relvis);
+    ampl_func_VS->SetParameter(0, Rw);
+    ampl_func_VS->SetParameter(1, Rl);
+    ampl_func_VS->SetParameter(2, L);
+    ampl_func_VS->SetParameter(3, Rt);
+    ampl_func_VS->SetParameter(4, Rl1Rl2);
+    ampl_func_VS->SetParameter(5, C1C2);
+    ampl_func_VS->SetParameter(6, V0);
+    ampl_func_VS->SetParameter(7, Relvis);
 
     ampl_func_w->SetParameter(0, Rw);
     ampl_func_w->SetParameter(1, Rl);
@@ -1652,7 +1652,7 @@ void rooting_rootest(Int_t input_n_blocks)
 
     // FITTING VS
     std::cout << "\n\n\n\n";
-    // Double_t N_SIGMA_VS = 10;
+    Double_t N_SIGMA_VS = 10;
     // ampl_func_VS->SetParLimits(0, Rw - N_SIGMA_VS * Rw_err, Rw + N_SIGMA_VS * Rw_err);
     // ampl_func_VS->SetParLimits(1, Rl - N_SIGMA_VS * Rl_err, Rl + N_SIGMA_VS * Rl_err);
     // ampl_func_VS->SetParLimits(2, L - N_SIGMA_VS * L_err, L + N_SIGMA_VS * L_err);
@@ -1661,6 +1661,15 @@ void rooting_rootest(Int_t input_n_blocks)
     // ampl_func_VS->SetParLimits(5, C1C2 - N_SIGMA_VS * C1C2_err, C1C2 + N_SIGMA_VS * C1C2_err);
     // ampl_func_VS->SetParLimits(6, V0 - V0/N_SIGMA_VS, V0 + V0/N_SIGMA_VS);
     // ampl_func_VS->SetParLimits(7, Relvis - N_SIGMA_VS * Relvis_err, Relvis + N_SIGMA_VS * Relvis_err);
+
+    ampl_func_VS->FixParameter(0, Rw);
+    ampl_func_VS->FixParameter(1, Rl);
+    // ampl_func_VS->FixParameter(2, L );
+    ampl_func_VS->FixParameter(3, Rt );
+    ampl_func_VS->FixParameter(4, Rl1Rl2);
+    ampl_func_VS->FixParameter(5, C1C2 );
+    ampl_func_VS->FixParameter(6, V0 );
+    ampl_func_VS->FixParameter(7, Relvis);
     // ampl_func_VS->FixParameter()
     std::cout << "------------------------START FITTING VS--------------------------------\n";
     ampl_graph[0]->Fit(ampl_func_VS, "M, E");
@@ -1697,10 +1706,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_phase_no_lim_no_Cl->SetTitle("Phase - Frequency (No Limits, No Cl)");
 
     // multi_ampl_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_ampl_no_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
+    multi_ampl_no_lim_no_Cl->GetXaxis()->SetLabelColor(1, 0.f);
     multi_ampl_no_lim_no_Cl->GetYaxis()->SetTitle("Amplitude (V)");
     // multi_phase_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_no_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_no_lim_no_Cl->GetXaxis()->SetLabelColor(1, 0.f);
     multi_phase_no_lim_no_Cl->GetYaxis()->SetTitle("Phase shift (rad)");
     multi_phase_no_lim_no_Cl->GetYaxis()->SetTitleOffset(1.5f);
 
@@ -1940,10 +1949,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_phase_no_lim_Cl_2->SetTitle("Phase - Frequency (No Limits, Cl)");
 
     // multi_ampl_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_ampl_no_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
+    multi_ampl_no_lim_Cl_2->GetXaxis()->SetLabelColor(1, 0.f);
     multi_ampl_no_lim_Cl_2->GetYaxis()->SetTitle("Amplitude (V)");
     // multi_phase_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_no_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_no_lim_Cl_2->GetXaxis()->SetLabelColor(1, 0.f);
     multi_phase_no_lim_Cl_2->GetYaxis()->SetTitle("Phase shift (rad)");
     multi_phase_no_lim_Cl_2->GetYaxis()->SetTitleOffset(1.5f);
 
@@ -2178,10 +2187,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_phase_no_lim_Cl_3->SetTitle("Phase - Frequency (No Limits, Cl)");
 
     // multi_ampl_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_ampl_no_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
+    multi_ampl_no_lim_Cl_3->GetXaxis()->SetLabelColor(1, 0.f);
     multi_ampl_no_lim_Cl_3->GetYaxis()->SetTitle("Amplitude (V)");
     // multi_phase_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_no_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_no_lim_Cl_3->GetXaxis()->SetLabelColor(1, 0.f);
     multi_phase_no_lim_Cl_3->GetYaxis()->SetTitle("Phase shift (rad)");
     multi_phase_no_lim_Cl_3->GetYaxis()->SetTitleOffset(1.5f);
 
@@ -2514,10 +2523,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_phase_lim_no_Cl->SetTitle("Phase - Frequency (Limited, No Cl)");
 
     // multi_ampl_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_ampl_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
+    multi_ampl_lim_no_Cl->GetXaxis()->SetLabelColor(1, 0.f);
     multi_ampl_lim_no_Cl->GetYaxis()->SetTitle("Amplitude (V)");
     // multi_phase_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_lim_no_Cl->GetXaxis()->SetLabelColor(1, 0.f);
     multi_phase_lim_no_Cl->GetYaxis()->SetTitle("Phase shift (rad)");
     multi_phase_lim_no_Cl->GetYaxis()->SetTitleOffset(1.5f);
 
@@ -2746,10 +2755,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_phase_lim_Cl_2->SetTitle("Phase - Frequency (Limited, Cl)");
 
     // multi_ampl_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_ampl_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
+    multi_ampl_lim_Cl_2->GetXaxis()->SetLabelColor(1, 0.f);
     multi_ampl_lim_Cl_2->GetYaxis()->SetTitle("Amplitude (V)");
     // multi_phase_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_lim_Cl_2->GetXaxis()->SetLabelColor(1, 0.f);
     multi_phase_lim_Cl_2->GetYaxis()->SetTitle("Phase shift (rad)");
     multi_phase_lim_Cl_2->GetYaxis()->SetTitleOffset(1.5f);
 
@@ -2983,10 +2992,10 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_phase_lim_Cl_3->SetTitle("Phase - Frequency (Limited, Cl)");
 
     // multi_ampl_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_ampl_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
+    multi_ampl_lim_Cl_3->GetXaxis()->SetLabelColor(1, 0.f);
     multi_ampl_lim_Cl_3->GetYaxis()->SetTitle("Amplitude (V)");
     // multi_phase_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_lim_Cl_3->GetXaxis()->SetLabelColor(1, 0.f);
     multi_phase_lim_Cl_3->GetYaxis()->SetTitle("Phase shift (rad)");
     multi_phase_lim_Cl_3->GetYaxis()->SetTitleOffset(1.5f);
 
@@ -3175,6 +3184,4 @@ void rooting_rootest(Int_t input_n_blocks)
     limits_Cl_3_canvas->Update();
     limits_Cl_3_canvas->SaveAs(("./risultati_finali/Sweep_" + GetSweepRange() + "/limits_Cl_3_" + std::to_string(GetVoltage()) + ".png").c_str());
     limits_Cl_3_canvas->Update();
-
-    
 }
