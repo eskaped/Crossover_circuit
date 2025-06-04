@@ -1,0 +1,36 @@
+Ampl_woofer:
+	Fit Status: ERROR(4140)
+	Chi^2: 25783219.32
+	Ndf: 56
+	CHI RIDOTTO: 460414.6308
+	Parameters: 
+		[0] - Rw = 219.8778688 +- 2.742487482e-07
+		[1] - Rl = 121.64941 +- 2.059477708e-07
+		[2] - L = 0.04856862 +- 2.301116797e-10
+Ampl_tweeter:
+	Fit Status: ERROR(4070)
+	Chi^2: 14518048.39
+	Ndf: 56
+	CHI RIDOTTO: 259250.8641
+	Parameters: 
+		[0] - Rt = 219.8708135 +- 5.686980131e-07
+		[1] - Rl1Rl2 = 123.2087904 +- 3.186811384e-07
+		[2] - C1C2 = 1.442999089e-06 +- 2.377242735e-12
+Phase_woofer:
+	Fit Status: ERROR(4)
+	Chi^2: 0
+	Ndf: 56
+	CHI RIDOTTO: 0
+	Parameters: 
+		[0] - Rw = 220.32 +- 0.6631963934
+		[1] - Rl = 120.1825 +- 2.200363646
+		[2] - L = 0.047154 +- 0.002121928651
+Phase_tweeter:
+	Fit Status: ERROR(4)
+	Chi^2: 0
+	Ndf: 56
+	CHI RIDOTTO: 0
+	Parameters: 
+		[0] - Rt = 220.19 +- 0.4787794006
+		[1] - Rl1Rl2 = 121.835 +- 2.060684275
+		[2] - C1C2 = 1.4225e-06 +- 6.40124593e-08

@@ -87,6 +87,7 @@ std::string GetSweepRange()
     case 593:
     case 580:
         output = "crossover";
+        break;
     default:
         output = "altri";
         break;
@@ -94,7 +95,10 @@ std::string GetSweepRange()
 
     return output;
 }
-
+bool isCrossover()
+{
+    return GetSweepRange() == "crossover";
+}
 std::string NumErrScien(double x, double x_err, std::string name_par)
 {
     std::string x_err_str = to_string_with_precision(x_err, 15); // s == "1e+05"
@@ -227,34 +231,72 @@ int const N_BLOCKS_ERR{251};
 TGraphErrors *ampl_graph[3];
 TGraphErrors *phase_graph[3];
 
+TF1 *ampl_func_VS;
+
 // par[0] -> Rw
 // par[1] -> Rl
 // par[2] -> L
-Double_t ampl_woofer(Double_t *f, Double_t *par)
+
+Double_t ampl_Vs(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
-    Double_t Vs{ampl_graph[0]->Eval(f[0])};
-    // clamp limits
-    if (f[0] < ampl_graph[0]->GetPointX(0))
-        Vs = ampl_graph[0]->GetPointY(0);
-    else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
-        Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
 
     Double_t Rw{par[0]};
     Double_t Rl{par[1]};
     Double_t L{par[2]};
-    return (Vs * Rw) / sqrt((Rl + Rw) * (Rl + Rw) + (w * L) * (w * L));
+    Double_t Rt{par[3]};
+    Double_t Rl1Rl2{par[4]};
+    Double_t C1C2{par[5]};
+    Double_t V0{par[6]};
+    Double_t Relvis{par[7]};
+
+    Double_t WTA{(Rl + Rw) / ((Rl + Rw) * (Rl + Rw) + (w * L) * (w * L))};
+    Double_t WTB{(Rt + Rl1Rl2) / ((Rt + Rl1Rl2) * (Rt + Rl1Rl2) + (1 / (w * C1C2)) * (1 / (w * C1C2)))};
+    Double_t WTC1{(-w * L) / ((Rl + Rw) * (Rl + Rw) + (w * L) * (w * L))};
+    Double_t WTC2{(1 / (w * C1C2)) / ((Rt + Rl1Rl2) * (Rt + Rl1Rl2) + (1 / (w * C1C2)) * (1 / (w * C1C2)))};
+
+    Double_t ReWT = (WTA + WTB) / ((WTA + WTB) * (WTA + WTB) + (WTC1 + WTC2) * (WTC1 + WTC2));
+    Double_t ImWT = -(WTC1 + WTC2) / ((WTA + WTB) * (WTA + WTB) + (WTC1 + WTC2) * (WTC1 + WTC2));
+
+    Double_t ReH = 1 + Relvis * ((Relvis + ReWT) / ((Relvis + ReWT) * (Relvis + ReWT) + ImWT * ImWT));
+    Double_t ImH = -Relvis * ((ImWT) / ((Relvis + ReWT) * (Relvis + ReWT) + ImWT * ImWT));
+
+    return V0 * std::sqrt(ReH * ReH + ImH * ImH);
+}
+Double_t ampl_woofer(Double_t *f, Double_t *par)
+{
+    Double_t w{TMath::TwoPi() * f[0]};
+    // Double_t Vs{ampl_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < ampl_graph[0]->GetPointX(0))
+    //     Vs = ampl_graph[0]->GetPointY(0);
+    // else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
+    //     Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+
+    Double_t Vs{ampl_func_VS->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < ampl_graph[0]->GetPointX(0))
+    //     Vs = ampl_graph[0]->GetPointY(0);
+    // else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
+    //     Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+
+    Double_t Rw{par[0]};
+    Double_t Rl{par[1]};
+    Double_t L{par[2]};
+    return (Vs * Rw) * pow((Rl + Rw) * (Rl + Rw) + (w * L) * (w * L), -0.5);
 }
 
 Double_t ampl_woofer_2(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
-    Double_t Vs{ampl_graph[0]->Eval(f[0])};
-    // clamp limits
-    if (f[0] < ampl_graph[0]->GetPointX(0))
-        Vs = ampl_graph[0]->GetPointY(0);
-    else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
-        Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+    // Double_t Vs{ampl_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < ampl_graph[0]->GetPointX(0))
+    //     Vs = ampl_graph[0]->GetPointY(0);
+    // else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
+    //     Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+
+    Double_t Vs{ampl_func_VS->Eval(f[0])};
 
     Double_t Rw{par[0]};
     Double_t Rl{par[1]};
@@ -269,12 +311,14 @@ Double_t ampl_woofer_2(Double_t *f, Double_t *par)
 Double_t ampl_woofer_3(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
-    Double_t Vs{ampl_graph[0]->Eval(f[0])};
-    // clamp limits
-    if (f[0] < ampl_graph[0]->GetPointX(0))
-        Vs = ampl_graph[0]->GetPointY(0);
-    else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
-        Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+    // Double_t Vs{ampl_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < ampl_graph[0]->GetPointX(0))
+    //     Vs = ampl_graph[0]->GetPointY(0);
+    // else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
+    //     Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+
+    Double_t Vs{ampl_func_VS->Eval(f[0])};
 
     Double_t Rw{par[0]};
     Double_t Rl{par[1]};
@@ -288,12 +332,15 @@ Double_t ampl_woofer_3(Double_t *f, Double_t *par)
 Double_t ampl_tweeter(Double_t *f, Double_t *par)
 {
     Double_t w{TMath::TwoPi() * f[0]};
-    Double_t Vs{ampl_graph[0]->Eval(f[0])};
-    // clamp limits
-    if (f[0] < ampl_graph[0]->GetPointX(0))
-        Vs = ampl_graph[0]->GetPointY(0);
-    else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
-        Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+    // Double_t Vs{ampl_graph[0]->Eval(f[0])};
+    // // clamp limits
+    // if (f[0] < ampl_graph[0]->GetPointX(0))
+    //     Vs = ampl_graph[0]->GetPointY(0);
+    // else if (f[0] > ampl_graph[0]->GetPointX(ampl_graph[0]->GetN() - 1))
+    //     Vs = ampl_graph[0]->GetPointY(ampl_graph[0]->GetN() - 1);
+
+    Double_t Vs{ampl_func_VS->Eval(f[0])};
+
     Double_t Rt{par[0]};
     Double_t Rl1Rl2{par[1]};
     Double_t C1C2{par[2]};
@@ -313,7 +360,7 @@ Double_t phase_woofer(Double_t *f, Double_t *par)
     Double_t Rw{par[0]};
     Double_t Rl{par[1]};
     Double_t L{par[2]};
-    return (std::atan(w * L / (Rl + Rw)));
+    return -(std::atan(w * L / (Rl + Rw)));
 }
 
 Double_t phase_woofer_2(Double_t *f, Double_t *par)
@@ -332,7 +379,7 @@ Double_t phase_woofer_2(Double_t *f, Double_t *par)
     Double_t Cl{par[3]};
     Double_t Num{w * L - w * w * w * L * L * Cl - Rl * Rl * w * Cl};
     Double_t Den{(Rw + Rl - Rw * w * w * L * Cl) * (1 - w * w * L * Cl) + (w * L + Rl * Rw * w * Cl) * (Rl * w * Cl)};
-    return (std::atan(Num / Den));
+    return -(std::atan(Num / Den));
 }
 
 Double_t phase_woofer_3(Double_t *f, Double_t *par)
@@ -351,7 +398,7 @@ Double_t phase_woofer_3(Double_t *f, Double_t *par)
     Double_t Cl{par[3]};
     Double_t Num{-w * L / (1 - w * w * L * Cl)};
     Double_t Den{Rw + Rl};
-    return (std::atan(Num / Den));
+    return -(std::atan(Num / Den));
 }
 
 Double_t phase_tweeter(Double_t *f, Double_t *par)
@@ -367,7 +414,7 @@ Double_t phase_tweeter(Double_t *f, Double_t *par)
     Double_t Rt{par[0]};
     Double_t Rl1Rl2{par[1]};
     Double_t C1C2{par[2]};
-    return (-std::atan(1 / (w * C1C2 * (Rt + Rl1Rl2))));
+    return -(-std::atan(1 / (w * C1C2 * (Rt + Rl1Rl2))));
 }
 
 Double_t ClampAngle(Double_t angle)
@@ -780,9 +827,9 @@ void PhaseShiftError(int n_blocks_input)
             func_arr[i]->SetParameter(1, pulsation);
             func_arr[i]->SetParameter(2, phase);
 
-            func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
-            func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
-            func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
+            // func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
+            // func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
+            // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
 
             func_arr[i]->SetNumberFitPoints(10000);
             func_arr[i]->SetNpx(10000);
@@ -798,9 +845,9 @@ void PhaseShiftError(int n_blocks_input)
                 func_arr[i]->SetParameter(1, pulsation);
                 func_arr[i]->SetParameter(2, phase);
 
-                func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
-                func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
-                func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
+                // func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
+                // func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
+                // func_arr[i]->SetParLimits(2, phase - phase / 10., phase + phase / 10.);
 
                 if (((V_arr[i]->Fit(func_arr[i], "QUIET")) != 0)) // i.e.: error
                 {
@@ -1230,6 +1277,9 @@ void rooting_rootest(Int_t input_n_blocks)
     Double_t const Rl1Rl2{1.2183500E+02}; // equivalent L's resistance on tweeter
     Double_t const C1C2{1.4225000E-06};
     Double_t const L{4.7154000E-02};
+    Double_t const Relvis{5.4406400E+01};
+
+    Double_t V0{GetVoltage() != 7 ? GetVoltage() : 7.5};
 
     Double_t const Rw_err{1.4737707E-01};
     Double_t const Rt_err{1.0639549E-01};
@@ -1237,6 +1287,7 @@ void rooting_rootest(Int_t input_n_blocks)
     Double_t const Rl1Rl2_err{4.5793013E-01}; // equivalent L's resistance on tweeter
     Double_t const C1C2_err{1.4225000E-08};
     Double_t const L_err{4.7154000E-04};
+    Double_t const Relvis_err{4.8626319E+00};
 
     Double_t freq_arr[N_BLOCKS];
     Double_t freq_err_arr[N_BLOCKS];
@@ -1324,6 +1375,25 @@ void rooting_rootest(Int_t input_n_blocks)
                     phase_arr[i][n_block] = ClampAngle(phase);
                     phase_err_arr[i][n_block] = ClampAngle(phase) / 10;
                 }
+                else // second fit went well
+                {
+                    // only V_s freq
+
+                    // ci è stato riferito (Marco e Fonseca) che root quando calcola gli errori sui parametri
+                    // restituisce l'autovalore della matrice di covarianza che, in teoria, va moltiplicato
+                    // per la sqrt(chi quadro ridotto). Root non lo fa perché assume sia circa 1. Per correttezza
+                    // lo moltiplichiamo noi.
+                    Double_t root_chi{std::sqrt(func_arr[i]->GetChisquare() / func_arr[i]->GetNDF())};
+                    if (i == 0)
+                    {
+                        freq_arr[n_block] = func_arr[i]->GetParameter(1) / (2. * TMath::Pi());
+                        freq_err_arr[n_block] = (func_arr[i]->GetParError(1) * root_chi) / (2. * TMath::Pi());
+                    }
+                    ampl_arr[i][n_block] = func_arr[i]->GetParameter(0);
+                    ampl_err_arr[i][n_block] = func_arr[i]->GetParError(0) * root_chi;
+                    phase_arr[i][n_block] = ClampAngle(func_arr[i]->GetParameter(2));
+                    phase_err_arr[i][n_block] = func_arr[i]->GetParError(2) * root_chi;
+                }
             }
             else
             { // only V_s freq
@@ -1402,9 +1472,9 @@ void rooting_rootest(Int_t input_n_blocks)
     {
         Double_t phase_Vs = phase_graph[0]->GetPointY(n_block);
         Double_t phase_Vs_err = phase_graph[0]->GetErrorY(n_block);
-        phase_graph[0]->SetPointY(n_block, phase_graph[0]->GetPointY(n_block) - phase_Vs);
-        phase_graph[1]->SetPointY(n_block, phase_graph[1]->GetPointY(n_block) - phase_Vs);
-        phase_graph[2]->SetPointY(n_block, phase_graph[2]->GetPointY(n_block) - phase_Vs);
+        phase_graph[0]->SetPointY(n_block, -(phase_graph[0]->GetPointY(n_block) - phase_Vs));
+        phase_graph[1]->SetPointY(n_block, -(phase_graph[1]->GetPointY(n_block) - phase_Vs));
+        phase_graph[2]->SetPointY(n_block, -(phase_graph[2]->GetPointY(n_block) - phase_Vs));
         phase_graph[0]->SetPointError(n_block, phase_graph[0]->GetErrorX(n_block), 0.);
         phase_graph[1]->SetPointError(n_block, phase_graph[1]->GetErrorX(n_block),
                                       std::sqrt(phase_graph[1]->GetErrorY(n_block) * phase_graph[1]->GetErrorY(n_block) + phase_Vs_err * phase_Vs_err));
@@ -1413,6 +1483,9 @@ void rooting_rootest(Int_t input_n_blocks)
     }
 
     // fitting
+
+    // ampl_func_VS = new TF1{"ampl_func_VS", ampl_Vs, 0., 1000., 8};
+    ampl_func_VS = new TF1{"ampl_func_VS", "[0]*x+[1]", 0., 1000.};
 
     TF1 *ampl_func_w{new TF1{"ampl_func_w", ampl_woofer, 0., 1000., 3}};
     TF1 *ampl_func_t{new TF1{"ampl_func_t", ampl_tweeter, 0., 1000., 3}};
@@ -1426,6 +1499,9 @@ void rooting_rootest(Int_t input_n_blocks)
     TF1 *ampl_func_w_3{new TF1{"ampl_func_w", ampl_woofer_2, 0., 1000., 4}};
     TF1 *phase_func_w_3{new TF1{"phase_func_w", phase_woofer_2, 0., 1000., 4}};
     // with cl------------------------------------------------
+
+    ampl_func_VS->SetNpx(100000);
+    ampl_func_VS->SetNumberFitPoints(100000);
 
     ampl_func_w->SetNpx(100000);
     ampl_func_w->SetNumberFitPoints(100000);
@@ -1446,6 +1522,15 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_w_2->SetNumberFitPoints(100000);
     phase_func_w_3->SetNumberFitPoints(100000);
     // with cl------------------------------------------------
+
+    // ampl_func_VS->SetParName(0, "Rw");
+    // ampl_func_VS->SetParName(1, "Rl");
+    // ampl_func_VS->SetParName(2, "L");
+    // ampl_func_VS->SetParName(3, "Rt");
+    // ampl_func_VS->SetParName(4, "Rl1Rl2");
+    // ampl_func_VS->SetParName(5, "C1C2");
+    // ampl_func_VS->SetParName(6, "V0");
+    // ampl_func_VS->SetParName(7, "Relvis");
 
     ampl_func_w->SetParName(0, "Rw");
     ampl_func_w->SetParName(1, "Rl");
@@ -1486,6 +1571,15 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_w_3->SetParName(3, "Cl");
     // with cl------------------------------------------------
 
+    // ampl_func_VS->SetParameter(0, Rw);
+    // ampl_func_VS->SetParameter(1, Rl);
+    // ampl_func_VS->SetParameter(2, L);
+    // ampl_func_VS->SetParameter(3, Rt);
+    // ampl_func_VS->SetParameter(4, Rl1Rl2);
+    // ampl_func_VS->SetParameter(5, C1C2);
+    // ampl_func_VS->SetParameter(6, V0);
+    // ampl_func_VS->SetParameter(7, Relvis);
+
     ampl_func_w->SetParameter(0, Rw);
     ampl_func_w->SetParameter(1, Rl);
     ampl_func_w->SetParameter(2, L);
@@ -1525,6 +1619,8 @@ void rooting_rootest(Int_t input_n_blocks)
     // with cl------------------------------------------------
 
     // GRAPHICS-----------------------------------------------
+    ampl_func_VS->SetLineColor(kGray + 3);
+
     ampl_func_t->SetLineColor(kBlue + 4);
     ampl_func_w->SetLineColor(kRed + 2);
 
@@ -1554,6 +1650,22 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_graph[1]->SetLineColor(kRed);
     phase_graph[2]->SetLineColor(kBlue);
 
+    // FITTING VS
+    std::cout << "\n\n\n\n";
+    // Double_t N_SIGMA_VS = 10;
+    // ampl_func_VS->SetParLimits(0, Rw - N_SIGMA_VS * Rw_err, Rw + N_SIGMA_VS * Rw_err);
+    // ampl_func_VS->SetParLimits(1, Rl - N_SIGMA_VS * Rl_err, Rl + N_SIGMA_VS * Rl_err);
+    // ampl_func_VS->SetParLimits(2, L - N_SIGMA_VS * L_err, L + N_SIGMA_VS * L_err);
+    // ampl_func_VS->SetParLimits(3, Rt - N_SIGMA_VS * Rt_err, Rt + N_SIGMA_VS * Rt_err);
+    // ampl_func_VS->SetParLimits(4, Rl1Rl2 - N_SIGMA_VS * Rl1Rl2_err, Rl1Rl2_err + N_SIGMA_VS * Rl1Rl2_err);
+    // ampl_func_VS->SetParLimits(5, C1C2 - N_SIGMA_VS * C1C2_err, C1C2 + N_SIGMA_VS * C1C2_err);
+    // ampl_func_VS->SetParLimits(6, V0 - V0/N_SIGMA_VS, V0 + V0/N_SIGMA_VS);
+    // ampl_func_VS->SetParLimits(7, Relvis - N_SIGMA_VS * Relvis_err, Relvis + N_SIGMA_VS * Relvis_err);
+    // ampl_func_VS->FixParameter()
+    std::cout << "------------------------START FITTING VS--------------------------------\n";
+    ampl_graph[0]->Fit(ampl_func_VS, "M, E");
+    std::cout << "------------------------END FITTING VS----------------------------------\n";
+
     // FITTING WITHOUT LIMITS (No Cl)-------------------------
 
     ROOT::Math::MinimizerOptions::SetDefaultStrategy(2);
@@ -1569,27 +1681,79 @@ void rooting_rootest(Int_t input_n_blocks)
 
     auto multi_ampl_no_lim_no_Cl{new TMultiGraph};
     auto multi_phase_no_lim_no_Cl{new TMultiGraph};
-    for (int i = 0; i != 3; ++i)
+
+    // skip Vs if we're in the crossover fitting
+    for (int i = (isCrossover() ? 1 : 0); i != 3; ++i)
     {
         multi_ampl_no_lim_no_Cl->Add(ampl_graph[i]);
+    }
+
+    for (int i = 0; i != 3; ++i)
+    {
         multi_phase_no_lim_no_Cl->Add(phase_graph[i]);
     }
 
     multi_ampl_no_lim_no_Cl->SetTitle("Amplitude - Frequency (No Limits, No Cl)");
     multi_phase_no_lim_no_Cl->SetTitle("Phase - Frequency (No Limits, No Cl)");
 
-    multi_ampl_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    // multi_ampl_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_no_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
     multi_ampl_no_lim_no_Cl->GetYaxis()->SetTitle("Amplitude (V)");
-    multi_phase_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_no_lim_no_Cl->GetYaxis()->SetTitle("Phase Shift (rad)");
-    multi_phase_no_lim_no_Cl->GetYaxis()->SetTitleOffset(1.2f);
+    // multi_phase_no_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_no_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_no_lim_no_Cl->GetYaxis()->SetTitle("Phase shift (rad)");
+    multi_phase_no_lim_no_Cl->GetYaxis()->SetTitleOffset(1.5f);
 
     TCanvas *no_limits_no_cl_canvas{new TCanvas{"no_limits_no_cl_canvas", "Amplitude and Phase No_limits_no_Cl", 0, 0, 1300, 700}};
     no_limits_no_cl_canvas->Divide(2, 1);
     no_limits_no_cl_canvas->cd(1);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_ampl_no_lim_no_Cl->Draw("ape");
 
-    TLegend *no_limits_no_cl_legend_ampl{new TLegend()};
+    TPad *no_limits_no_cl_pad_residual_ampl = new TPad("pad", "pad", 0., 0., 1., 1.);
+    no_limits_no_cl_pad_residual_ampl->SetTopMargin(0.8);
+    no_limits_no_cl_pad_residual_ampl->Draw();
+    no_limits_no_cl_pad_residual_ampl->SetFillStyle(0);
+    no_limits_no_cl_pad_residual_ampl->cd();
+    no_limits_no_cl_pad_residual_ampl->SetGridy();
+
+    TGraphErrors *no_limits_no_cl_pad_ampl_w = new TGraphErrors(ampl_graph[1]->GetN());
+    for (Int_t i = 0; i != ampl_graph[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph[1]->GetPointX(i);
+        Double_t y = ampl_graph[1]->GetPointY(i);
+        Double_t y_f0 = ampl_func_w->Eval(x);
+        no_limits_no_cl_pad_ampl_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *no_limits_no_cl_pad_ampl_t = new TGraphErrors(ampl_graph[2]->GetN());
+    for (Int_t i = 0; i != ampl_graph[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph[2]->GetPointX(i);
+        Double_t y = ampl_graph[2]->GetPointY(i);
+        Double_t y_f0 = ampl_func_t->Eval(x);
+        no_limits_no_cl_pad_ampl_t->SetPoint(i, x, y - y_f0);
+    }
+
+    no_limits_no_cl_pad_ampl_w->SetLineColor(kRed + 2);
+    no_limits_no_cl_pad_ampl_t->SetLineColor(kBlue + 2);
+    TMultiGraph *no_limits_no_cl_pad_multi_ampl = new TMultiGraph();
+    no_limits_no_cl_pad_multi_ampl->Add(no_limits_no_cl_pad_ampl_w);
+    no_limits_no_cl_pad_multi_ampl->Add(no_limits_no_cl_pad_ampl_t);
+    no_limits_no_cl_pad_multi_ampl->GetXaxis()->SetLabelSize(0.04);
+    no_limits_no_cl_pad_multi_ampl->GetYaxis()->SetLabelSize(0.03);
+    no_limits_no_cl_pad_multi_ampl->GetXaxis()->SetTitle("Frequency (Hz)");
+    no_limits_no_cl_pad_multi_ampl->GetYaxis()->SetNdivisions(-4);
+    no_limits_no_cl_pad_multi_ampl->Draw("apl");
+
+    no_limits_no_cl_canvas->cd(1);
+
+    TLegend *no_limits_no_cl_legend_ampl{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // no_limits_no_cl_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     no_limits_no_cl_legend_ampl->SetNColumns(3);
     // RIGA 1
@@ -1614,8 +1778,51 @@ void rooting_rootest(Int_t input_n_blocks)
     no_limits_no_cl_legend_ampl->Draw();
 
     no_limits_no_cl_canvas->cd(2);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_phase_no_lim_no_Cl->Draw("ape");
 
+    TPad *no_limits_no_cl_pad_residual_phase = new TPad("pad", "pad", 0., 0., 1., 1.);
+    no_limits_no_cl_pad_residual_phase->SetTopMargin(0.8);
+    no_limits_no_cl_pad_residual_phase->Draw();
+    no_limits_no_cl_pad_residual_phase->SetFillStyle(0);
+    no_limits_no_cl_pad_residual_phase->cd();
+    no_limits_no_cl_pad_residual_phase->SetGridy();
+
+    TGraphErrors *no_limits_no_cl_pad_phase_w = new TGraphErrors(phase_graph[1]->GetN());
+    for (Int_t i = 0; i != phase_graph[1]->GetN(); ++i)
+    {
+        Double_t x = phase_graph[1]->GetPointX(i);
+        Double_t y = phase_graph[1]->GetPointY(i);
+        Double_t y_f0 = phase_func_w->Eval(x);
+        no_limits_no_cl_pad_phase_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *no_limits_no_cl_pad_phase_t = new TGraphErrors(phase_graph[2]->GetN());
+    for (Int_t i = 0; i != phase_graph[2]->GetN(); ++i)
+    {
+        Double_t x = phase_graph[2]->GetPointX(i);
+        Double_t y = phase_graph[2]->GetPointY(i);
+        Double_t y_f0 = phase_func_t->Eval(x);
+        no_limits_no_cl_pad_phase_t->SetPoint(i, x, y - y_f0);
+    }
+
+    no_limits_no_cl_pad_phase_w->SetLineColor(kRed + 2);
+    no_limits_no_cl_pad_phase_t->SetLineColor(kBlue + 2);
+    TMultiGraph *no_limits_no_cl_pad_multi_phase = new TMultiGraph();
+    no_limits_no_cl_pad_multi_phase->Add(no_limits_no_cl_pad_phase_w);
+    no_limits_no_cl_pad_multi_phase->Add(no_limits_no_cl_pad_phase_t);
+    no_limits_no_cl_pad_multi_phase->GetXaxis()->SetLabelSize(0.04);
+    no_limits_no_cl_pad_multi_phase->GetYaxis()->SetLabelSize(0.03);
+    no_limits_no_cl_pad_multi_phase->GetXaxis()->SetTitle("Frequency (Hz)");
+    no_limits_no_cl_pad_multi_phase->GetYaxis()->SetNdivisions(-4);
+    no_limits_no_cl_pad_multi_phase->Draw("apl");
+
+    no_limits_no_cl_canvas->cd(2);
     // TLegend *no_limits_no_cl_legend_phasel{new TLegend()};
     // no_limits_no_cl_legend_phasel->SetMargin(0.05);
     // no_limits_no_cl_legend_phasel->SetEntrySeparation(0);
@@ -1627,7 +1834,7 @@ void rooting_rootest(Int_t input_n_blocks)
     // no_limits_no_cl_legend_phasel->AddEntry(phase_func_t, "Phase Shift V_Tweeter Fit", "l");
     // no_limits_no_cl_legend_phasel->Draw();
 
-    TLegend *no_limits_no_cl_legend_phase{new TLegend()};
+    TLegend *no_limits_no_cl_legend_phase{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // no_limits_no_cl_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     no_limits_no_cl_legend_phase->SetNColumns(3);
     // RIGA 1
@@ -1688,6 +1895,10 @@ void rooting_rootest(Int_t input_n_blocks)
         no_limits_no_Cl_file << "\t\t[" << i << "] - " << phase_func_t->GetParName(i) << " = " << phase_func_t->GetParameter(i) << " +- " << phase_func_t->GetParError(i) << '\n';
     no_limits_no_Cl_file.close();
 
+    // Save Canvas
+    no_limits_no_cl_canvas->Update();
+    no_limits_no_cl_canvas->SaveAs(("./risultati_finali/Sweep_" + GetSweepRange() + "/no_limits_no_cl_" + std::to_string(GetVoltage()) + ".png").c_str());
+
     // NO LIMITS (EXCEPT CL>=0) - Cl 2 -----------------------------------------------------------------
     TGraphErrors *ampl_graph_no_limits_Cl2{new TGraphErrors(*ampl_graph[1])};
     TGraphErrors *phase_graph_no_limits_Cl2{new TGraphErrors(*phase_graph[1])};
@@ -1703,7 +1914,8 @@ void rooting_rootest(Int_t input_n_blocks)
     auto multi_ampl_no_lim_Cl_2{new TMultiGraph};
     auto multi_phase_no_lim_Cl_2{new TMultiGraph};
 
-    multi_ampl_no_lim_Cl_2->Add(ampl_graph[0]);
+    if (!isCrossover())
+        multi_ampl_no_lim_Cl_2->Add(ampl_graph[0]);
     multi_phase_no_lim_Cl_2->Add(phase_graph[0]);
     multi_ampl_no_lim_Cl_2->Add(ampl_graph_no_limits_Cl2);
     multi_phase_no_lim_Cl_2->Add(phase_graph_no_limits_Cl2);
@@ -1727,18 +1939,64 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_no_lim_Cl_2->SetTitle("Amplitude - Frequency (No Limits, Cl)");
     multi_phase_no_lim_Cl_2->SetTitle("Phase - Frequency (No Limits, Cl)");
 
-    multi_ampl_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    // multi_ampl_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_no_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
     multi_ampl_no_lim_Cl_2->GetYaxis()->SetTitle("Amplitude (V)");
-    multi_phase_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_no_lim_Cl_2->GetYaxis()->SetTitle("Phase (rad)");
-    multi_phase_no_lim_Cl_2->GetYaxis()->SetTitleOffset(1.2f);
+    // multi_phase_no_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_no_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_no_lim_Cl_2->GetYaxis()->SetTitle("Phase shift (rad)");
+    multi_phase_no_lim_Cl_2->GetYaxis()->SetTitleOffset(1.5f);
 
     TCanvas *no_limits_Cl_2_canvas{new TCanvas{"no_limits_Cl_2_canvas", "Amplitude and Phase No_limits_Cl_2", 0, 0, 1300, 700}};
     no_limits_Cl_2_canvas->Divide(2, 1);
     no_limits_Cl_2_canvas->cd(1);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_ampl_no_lim_Cl_2->Draw("ape");
 
-    TLegend *no_limits_cl_2_legend_ampl{new TLegend()};
+    TPad *no_limits_Cl_2_pad_residual_ampl = new TPad("pad", "pad", 0., 0., 1., 1.);
+    no_limits_Cl_2_pad_residual_ampl->SetTopMargin(0.8);
+    no_limits_Cl_2_pad_residual_ampl->Draw();
+    no_limits_Cl_2_pad_residual_ampl->SetFillStyle(0);
+    no_limits_Cl_2_pad_residual_ampl->cd();
+    no_limits_Cl_2_pad_residual_ampl->SetGridy();
+
+    TGraphErrors *no_limits_Cl_2_pad_ampl_w = new TGraphErrors(ampl_graph[1]->GetN());
+    for (Int_t i = 0; i != ampl_graph[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph[1]->GetPointX(i);
+        Double_t y = ampl_graph[1]->GetPointY(i);
+        Double_t y_f0 = ampl_func_w_2->Eval(x);
+        no_limits_Cl_2_pad_ampl_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *no_limits_Cl_2_pad_ampl_t = new TGraphErrors(ampl_graph[2]->GetN());
+    for (Int_t i = 0; i != ampl_graph[2]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph[2]->GetPointX(i);
+        Double_t y = ampl_graph[2]->GetPointY(i);
+        Double_t y_f0 = ampl_func_t->Eval(x);
+        no_limits_Cl_2_pad_ampl_t->SetPoint(i, x, y - y_f0);
+    }
+
+    no_limits_Cl_2_pad_ampl_w->SetLineColor(kRed + 2);
+    no_limits_Cl_2_pad_ampl_t->SetLineColor(kBlue + 2);
+    TMultiGraph *no_limits_Cl_2_pad_multi_ampl = new TMultiGraph();
+    no_limits_Cl_2_pad_multi_ampl->Add(no_limits_Cl_2_pad_ampl_w);
+    no_limits_Cl_2_pad_multi_ampl->Add(no_limits_Cl_2_pad_ampl_t);
+    no_limits_Cl_2_pad_multi_ampl->GetXaxis()->SetLabelSize(0.04);
+    no_limits_Cl_2_pad_multi_ampl->GetYaxis()->SetLabelSize(0.03);
+    no_limits_Cl_2_pad_multi_ampl->GetXaxis()->SetTitle("Frequency (Hz)");
+    no_limits_Cl_2_pad_multi_ampl->GetYaxis()->SetNdivisions(-4);
+    no_limits_Cl_2_pad_multi_ampl->Draw("apl");
+
+    no_limits_Cl_2_canvas->cd(1);
+
+    TLegend *no_limits_cl_2_legend_ampl{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // no_limits_cl_2_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     no_limits_cl_2_legend_ampl->SetNColumns(3);
     // RIGA 1
@@ -1765,9 +2023,53 @@ void rooting_rootest(Int_t input_n_blocks)
     no_limits_cl_2_legend_ampl->Draw();
 
     no_limits_Cl_2_canvas->cd(2);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_phase_no_lim_Cl_2->Draw("ape");
 
-    TLegend *no_limits_cl_2_legend_phase{new TLegend()};
+    TPad *no_limits_Cl_2_pad_residual_phase = new TPad("pad", "pad", 0., 0., 1., 1.);
+    no_limits_Cl_2_pad_residual_phase->SetTopMargin(0.8);
+    no_limits_Cl_2_pad_residual_phase->Draw();
+    no_limits_Cl_2_pad_residual_phase->SetFillStyle(0);
+    no_limits_Cl_2_pad_residual_phase->cd();
+    no_limits_Cl_2_pad_residual_phase->SetGridy();
+
+    TGraphErrors *no_limits_Cl_2_pad_phase_w = new TGraphErrors(phase_graph[1]->GetN());
+    for (Int_t i = 0; i != phase_graph[1]->GetN(); ++i)
+    {
+        Double_t x = phase_graph[1]->GetPointX(i);
+        Double_t y = phase_graph[1]->GetPointY(i);
+        Double_t y_f0 = phase_func_w_2->Eval(x);
+        no_limits_Cl_2_pad_phase_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *no_limits_Cl_2_pad_phase_t = new TGraphErrors(phase_graph[2]->GetN());
+    for (Int_t i = 0; i != phase_graph[2]->GetN(); ++i)
+    {
+        Double_t x = phase_graph[2]->GetPointX(i);
+        Double_t y = phase_graph[2]->GetPointY(i);
+        Double_t y_f0 = phase_func_t->Eval(x);
+        no_limits_Cl_2_pad_phase_t->SetPoint(i, x, y - y_f0);
+    }
+
+    no_limits_Cl_2_pad_phase_w->SetLineColor(kRed + 2);
+    no_limits_Cl_2_pad_phase_t->SetLineColor(kBlue + 2);
+    TMultiGraph *no_limits_Cl_2_pad_multi_phase = new TMultiGraph();
+    no_limits_Cl_2_pad_multi_phase->Add(no_limits_Cl_2_pad_phase_w);
+    no_limits_Cl_2_pad_multi_phase->Add(no_limits_Cl_2_pad_phase_t);
+    no_limits_Cl_2_pad_multi_phase->GetXaxis()->SetLabelSize(0.04);
+    no_limits_Cl_2_pad_multi_phase->GetYaxis()->SetLabelSize(0.03);
+    no_limits_Cl_2_pad_multi_phase->GetXaxis()->SetTitle("Frequency (Hz)");
+    no_limits_Cl_2_pad_multi_phase->GetYaxis()->SetNdivisions(-4);
+    no_limits_Cl_2_pad_multi_phase->Draw("apl");
+
+    no_limits_Cl_2_canvas->cd(2);
+
+    TLegend *no_limits_cl_2_legend_phase{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // no_limits_cl_2_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     no_limits_cl_2_legend_phase->SetNColumns(3);
     // RIGA 1
@@ -1830,6 +2132,10 @@ void rooting_rootest(Int_t input_n_blocks)
         no_limits_Cl_2_file << "\t\t[" << i << "] - " << phase_func_t->GetParName(i) << " = " << phase_func_t->GetParameter(i) << " +- " << phase_func_t->GetParError(i) << '\n';
     no_limits_Cl_2_file.close();
 
+    // Save Canvas
+    no_limits_Cl_2_canvas->Update();
+    no_limits_Cl_2_canvas->SaveAs(("./risultati_finali/Sweep_" + GetSweepRange() + "/no_limits_Cl_2_" + std::to_string(GetVoltage()) + ".png").c_str());
+
     // NO LIMITS - Cl 3 -----------------------------------------------------------------
     TGraphErrors *ampl_graph_no_limits_Cl3{new TGraphErrors(*ampl_graph[1])};
     TGraphErrors *phase_graph_no_limits_Cl3{new TGraphErrors(*phase_graph[1])};
@@ -1845,7 +2151,8 @@ void rooting_rootest(Int_t input_n_blocks)
     auto multi_ampl_no_lim_Cl_3{new TMultiGraph};
     auto multi_phase_no_lim_Cl_3{new TMultiGraph};
 
-    multi_ampl_no_lim_Cl_3->Add(ampl_graph[0]);
+    if (!isCrossover())
+        multi_ampl_no_lim_Cl_3->Add(ampl_graph[0]);
     multi_phase_no_lim_Cl_3->Add(phase_graph[0]);
     multi_ampl_no_lim_Cl_3->Add(ampl_graph_no_limits_Cl3);
     multi_phase_no_lim_Cl_3->Add(phase_graph_no_limits_Cl3);
@@ -1870,18 +2177,63 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_no_lim_Cl_3->SetTitle("Amplitude - Frequency (No Limits, Cl)");
     multi_phase_no_lim_Cl_3->SetTitle("Phase - Frequency (No Limits, Cl)");
 
-    multi_ampl_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    // multi_ampl_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_no_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
     multi_ampl_no_lim_Cl_3->GetYaxis()->SetTitle("Amplitude (V)");
-    multi_phase_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_no_lim_Cl_3->GetYaxis()->SetTitle("Phase (rad)");
-    multi_phase_no_lim_Cl_3->GetYaxis()->SetTitleOffset(1.2f);
+    // multi_phase_no_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_no_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_no_lim_Cl_3->GetYaxis()->SetTitle("Phase shift (rad)");
+    multi_phase_no_lim_Cl_3->GetYaxis()->SetTitleOffset(1.5f);
 
     TCanvas *no_limits_Cl_3_canvas{new TCanvas{"no_limits_Cl_3_canvas", "Amplitude and Phase No_limits_Cl_3", 0, 0, 1300, 700}};
     no_limits_Cl_3_canvas->Divide(2, 1);
+
     no_limits_Cl_3_canvas->cd(1);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
     multi_ampl_no_lim_Cl_3->Draw("ape");
 
-    TLegend *no_limits_cl_3_legend_ampl{new TLegend()};
+    TPad *no_limits_Cl_3_pad_residual_ampl = new TPad("pad", "pad", 0., 0., 1., 1.);
+    no_limits_Cl_3_pad_residual_ampl->SetTopMargin(0.8);
+    no_limits_Cl_3_pad_residual_ampl->Draw();
+    no_limits_Cl_3_pad_residual_ampl->SetFillStyle(0);
+    no_limits_Cl_3_pad_residual_ampl->cd();
+    no_limits_Cl_3_pad_residual_ampl->SetGridy();
+
+    TGraphErrors *no_limits_Cl_3_pad_ampl_w = new TGraphErrors(ampl_graph[1]->GetN());
+    for (Int_t i = 0; i != ampl_graph[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph[1]->GetPointX(i);
+        Double_t y = ampl_graph[1]->GetPointY(i);
+        Double_t y_f0 = ampl_func_w_3->Eval(x);
+        no_limits_Cl_3_pad_ampl_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *no_limits_Cl_3_pad_ampl_t = new TGraphErrors(ampl_graph[2]->GetN());
+    for (Int_t i = 0; i != ampl_graph[2]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph[2]->GetPointX(i);
+        Double_t y = ampl_graph[2]->GetPointY(i);
+        Double_t y_f0 = ampl_func_t->Eval(x);
+        no_limits_Cl_3_pad_ampl_t->SetPoint(i, x, y - y_f0);
+    }
+
+    no_limits_Cl_3_pad_ampl_w->SetLineColor(kRed + 2);
+    no_limits_Cl_3_pad_ampl_t->SetLineColor(kBlue + 2);
+    TMultiGraph *no_limits_Cl_3_pad_multi_ampl = new TMultiGraph();
+    no_limits_Cl_3_pad_multi_ampl->Add(no_limits_Cl_3_pad_ampl_w);
+    no_limits_Cl_3_pad_multi_ampl->Add(no_limits_Cl_3_pad_ampl_t);
+    no_limits_Cl_3_pad_multi_ampl->GetXaxis()->SetLabelSize(0.04);
+    no_limits_Cl_3_pad_multi_ampl->GetYaxis()->SetLabelSize(0.03);
+    no_limits_Cl_3_pad_multi_ampl->GetXaxis()->SetTitle("Frequency (Hz)");
+    no_limits_Cl_3_pad_multi_ampl->GetYaxis()->SetNdivisions(-4);
+    no_limits_Cl_3_pad_multi_ampl->Draw("apl");
+    no_limits_Cl_3_canvas->cd(1);
+
+    TLegend *no_limits_cl_3_legend_ampl{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // no_limits_cl_3_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     no_limits_cl_3_legend_ampl->SetNColumns(3);
     // RIGA 1
@@ -1908,9 +2260,53 @@ void rooting_rootest(Int_t input_n_blocks)
     no_limits_cl_3_legend_ampl->Draw();
 
     no_limits_Cl_3_canvas->cd(2);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_phase_no_lim_Cl_3->Draw("ape");
 
-    TLegend *no_limits_cl_3_legend_phase{new TLegend()};
+    TPad *no_limits_Cl_3_pad_residual_phase = new TPad("pad", "pad", 0., 0., 1., 1.);
+    no_limits_Cl_3_pad_residual_phase->SetTopMargin(0.8);
+    no_limits_Cl_3_pad_residual_phase->Draw();
+    no_limits_Cl_3_pad_residual_phase->SetFillStyle(0);
+    no_limits_Cl_3_pad_residual_phase->cd();
+    no_limits_Cl_3_pad_residual_phase->SetGridy();
+
+    TGraphErrors *no_limits_Cl_3_pad_phase_w = new TGraphErrors(phase_graph[1]->GetN());
+    for (Int_t i = 0; i != phase_graph[1]->GetN(); ++i)
+    {
+        Double_t x = phase_graph[1]->GetPointX(i);
+        Double_t y = phase_graph[1]->GetPointY(i);
+        Double_t y_f0 = phase_func_w_3->Eval(x);
+        no_limits_Cl_3_pad_phase_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *no_limits_Cl_3_pad_phase_t = new TGraphErrors(phase_graph[2]->GetN());
+    for (Int_t i = 0; i != phase_graph[2]->GetN(); ++i)
+    {
+        Double_t x = phase_graph[2]->GetPointX(i);
+        Double_t y = phase_graph[2]->GetPointY(i);
+        Double_t y_f0 = phase_func_t->Eval(x);
+        no_limits_Cl_3_pad_phase_t->SetPoint(i, x, y - y_f0);
+    }
+
+    no_limits_Cl_3_pad_phase_w->SetLineColor(kRed + 2);
+    no_limits_Cl_3_pad_phase_t->SetLineColor(kBlue + 2);
+    TMultiGraph *no_limits_Cl_3_pad_multi_phase = new TMultiGraph();
+    no_limits_Cl_3_pad_multi_phase->Add(no_limits_Cl_3_pad_phase_w);
+    no_limits_Cl_3_pad_multi_phase->Add(no_limits_Cl_3_pad_phase_t);
+    no_limits_Cl_3_pad_multi_phase->GetXaxis()->SetLabelSize(0.04);
+    no_limits_Cl_3_pad_multi_phase->GetYaxis()->SetLabelSize(0.03);
+    no_limits_Cl_3_pad_multi_phase->GetXaxis()->SetTitle("Frequency (Hz)");
+    no_limits_Cl_3_pad_multi_phase->GetYaxis()->SetNdivisions(-4);
+    no_limits_Cl_3_pad_multi_phase->Draw("apl");
+
+    no_limits_Cl_3_canvas->cd(2);
+
+    TLegend *no_limits_cl_3_legend_phase{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // no_limits_cl_3_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     no_limits_cl_3_legend_phase->SetNColumns(3);
     // RIGA 1
@@ -1973,6 +2369,10 @@ void rooting_rootest(Int_t input_n_blocks)
         no_limits_Cl_3_file << "\t\t[" << i << "] - " << phase_func_t->GetParName(i) << " = " << phase_func_t->GetParameter(i) << " +- " << phase_func_t->GetParError(i) << '\n';
     no_limits_Cl_3_file.close();
 
+    // Save Canvas
+    no_limits_Cl_3_canvas->Update();
+    no_limits_Cl_3_canvas->SaveAs(("./risultati_finali/Sweep_" + GetSweepRange() + "/no_limits_Cl_3_" + std::to_string(GetVoltage()) + ".png").c_str());
+
     // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     // FITTING WITH LIMITS-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1994,6 +2394,9 @@ void rooting_rootest(Int_t input_n_blocks)
 
     TF1 *ampl_func_w_limits = new TF1(*ampl_func_w);
     TF1 *ampl_func_t_limits = new TF1(*ampl_func_t);
+
+    // TF1 *ampl_func_w_limits = new TF1("amplw", "[0]*x+[1]");
+    // TF1 *ampl_func_t_limits = new TF1("amplt", "[0]*x+[1]");
     TF1 *phase_func_w_limits = new TF1(*phase_func_w);
     TF1 *phase_func_t_limits = new TF1(*phase_func_t);
 
@@ -2040,14 +2443,14 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_func_w_3_limits->SetParameter(3, 1E-8);
     // with cl------------------------------------------------
 
-    // PAR LIMITS-----------------------------------------------------------------
-    double N_SIGMA = 3;
-    ampl_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
-    ampl_func_w_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    // // PAR LIMITS-----------------------------------------------------------------
+    double N_SIGMA = 5;
+    // ampl_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    // ampl_func_w_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
     ampl_func_w_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
 
-    ampl_func_t_limits->SetParLimits(0, Rt - N_SIGMA * Rt_err, Rt + N_SIGMA * Rt_err);
-    ampl_func_t_limits->SetParLimits(1, Rl1Rl2 - N_SIGMA * Rl1Rl2_err, Rl1Rl2 + N_SIGMA * Rl1Rl2_err);
+    // ampl_func_t_limits->SetParLimits(0, Rt - N_SIGMA * Rt_err, Rt + N_SIGMA * Rt_err);
+    // ampl_func_t_limits->SetParLimits(1, Rl1Rl2 - N_SIGMA * Rl1Rl2_err, Rl1Rl2 + N_SIGMA * Rl1Rl2_err);
     ampl_func_t_limits->SetParLimits(2, C1C2 - N_SIGMA * C1C2_err, C1C2 + N_SIGMA * C1C2_err);
 
     phase_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
@@ -2081,7 +2484,10 @@ void rooting_rootest(Int_t input_n_blocks)
     // cl---------------------
 
     // ROOT::Math::MinimizerOptions::SetDefaultMaxFunctionCalls(1000000);
-
+    // ampl_func_w_limits->SetRange(ampl_graph_limits[1]->GetPointX(0), ampl_graph_limits[1]->GetPointX(ampl_graph_limits[1]->GetN()) - 1);
+    // ampl_func_w_limits->SetMinimum(ampl_graph_limits[1]->GetMinimum());
+    // ampl_func_w_limits->SetMaximum(ampl_graph_limits[1]->GetMaximum());
+    // ampl_func_t_limits->SetRange(ampl_graph_limits[2]->GetPointX(0), ampl_graph_limits[2]->GetPointX(ampl_graph_limits[2]->GetN()) - 1);
     // FITTING WITH LIMITS (No Cl)-------------------------
 
     ampl_woofer_fit_res = ampl_graph_limits[1]->Fit(ampl_func_w_limits, "Q, M, E");
@@ -2096,27 +2502,74 @@ void rooting_rootest(Int_t input_n_blocks)
 
     auto multi_ampl_lim_no_Cl{new TMultiGraph};
     auto multi_phase_lim_no_Cl{new TMultiGraph};
-    for (int i = 0; i != 3; ++i)
+    for (int i = (isCrossover() ? 1 : 0); i != 3; ++i)
     {
         multi_ampl_lim_no_Cl->Add(ampl_graph_limits[i]);
+    }
+    for (int i = 0; i != 3; ++i)
+    {
         multi_phase_lim_no_Cl->Add(phase_graph_limits[i]);
     }
-
     multi_ampl_lim_no_Cl->SetTitle("Amplitude - Frequency (Limited, No Cl)");
     multi_phase_lim_no_Cl->SetTitle("Phase - Frequency (Limited, No Cl)");
 
-    multi_ampl_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    // multi_ampl_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
     multi_ampl_lim_no_Cl->GetYaxis()->SetTitle("Amplitude (V)");
-    multi_phase_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_lim_no_Cl->GetYaxis()->SetTitle("Phase (rad)");
-    multi_phase_lim_no_Cl->GetYaxis()->SetTitleOffset(1.2f);
+    // multi_phase_lim_no_Cl->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_lim_no_Cl->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_lim_no_Cl->GetYaxis()->SetTitle("Phase shift (rad)");
+    multi_phase_lim_no_Cl->GetYaxis()->SetTitleOffset(1.5f);
 
     TCanvas *limits_no_cl_canvas{new TCanvas{"limits_no_cl_canvas", "Amplitude and Phase Limits_no_Cl", 0, 0, 1300, 700}};
     limits_no_cl_canvas->Divide(2, 1);
     limits_no_cl_canvas->cd(1);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_ampl_lim_no_Cl->Draw("ape");
 
-    TLegend *limits_no_cl_legend_ampl{new TLegend()};
+    TPad *limits_no_cl_pad_residual = new TPad("pad", "pad", 0., 0., 1., 1.);
+    limits_no_cl_pad_residual->SetTopMargin(0.8);
+    limits_no_cl_pad_residual->Draw();
+    limits_no_cl_pad_residual->SetFillStyle(0);
+    limits_no_cl_pad_residual->cd();
+    limits_no_cl_pad_residual->SetGridy();
+
+    TGraphErrors *limits_no_cl_pad_ampl_w = new TGraphErrors(ampl_graph_limits[1]->GetN());
+    for (Int_t i = 0; i != ampl_graph_limits[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph_limits[1]->GetPointX(i);
+        Double_t y = ampl_graph_limits[1]->GetPointY(i);
+        Double_t y_f0 = ampl_func_w_limits->Eval(x);
+        limits_no_cl_pad_ampl_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *limits_no_cl_pad_ampl_t = new TGraphErrors(ampl_graph_limits[2]->GetN());
+    for (Int_t i = 0; i != ampl_graph_limits[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph_limits[2]->GetPointX(i);
+        Double_t y = ampl_graph_limits[2]->GetPointY(i);
+        Double_t y_f0 = ampl_func_t_limits->Eval(x);
+        limits_no_cl_pad_ampl_t->SetPoint(i, x, y - y_f0);
+    }
+
+    limits_no_cl_pad_ampl_w->SetLineColor(kRed + 2);
+    limits_no_cl_pad_ampl_t->SetLineColor(kBlue + 2);
+    TMultiGraph *limits_no_cl_pad_multi_ampl = new TMultiGraph();
+    limits_no_cl_pad_multi_ampl->Add(limits_no_cl_pad_ampl_w);
+    limits_no_cl_pad_multi_ampl->Add(limits_no_cl_pad_ampl_t);
+    limits_no_cl_pad_multi_ampl->GetXaxis()->SetLabelSize(0.04);
+    limits_no_cl_pad_multi_ampl->GetYaxis()->SetLabelSize(0.03);
+    limits_no_cl_pad_multi_ampl->GetXaxis()->SetTitle("Frequency (Hz)");
+    limits_no_cl_pad_multi_ampl->GetYaxis()->SetNdivisions(-4);
+    limits_no_cl_pad_multi_ampl->Draw("apl");
+
+    limits_no_cl_canvas->cd(1);
+    TLegend *limits_no_cl_legend_ampl{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // limits_no_cl_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     limits_no_cl_legend_ampl->SetNColumns(3);
     // RIGA 1
@@ -2141,9 +2594,53 @@ void rooting_rootest(Int_t input_n_blocks)
     limits_no_cl_legend_ampl->Draw();
 
     limits_no_cl_canvas->cd(2);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_phase_lim_no_Cl->Draw("ape");
 
-    TLegend *limits_no_cl_legend_phase{new TLegend()};
+    TPad *limits_no_cl_pad_residual_phase = new TPad("pad", "pad", 0., 0., 1., 1.);
+    limits_no_cl_pad_residual_phase->SetTopMargin(0.8);
+    limits_no_cl_pad_residual_phase->Draw();
+    limits_no_cl_pad_residual_phase->SetFillStyle(0);
+    limits_no_cl_pad_residual_phase->cd();
+    limits_no_cl_pad_residual_phase->SetGridy();
+
+    TGraphErrors *limits_no_cl_pad_phase_w = new TGraphErrors(phase_graph_limits[1]->GetN());
+    for (Int_t i = 0; i != phase_graph_limits[1]->GetN(); ++i)
+    {
+        Double_t x = phase_graph_limits[1]->GetPointX(i);
+        Double_t y = phase_graph_limits[1]->GetPointY(i);
+        Double_t y_f0 = phase_func_w_limits->Eval(x);
+        limits_no_cl_pad_phase_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *limits_no_cl_pad_phase_t = new TGraphErrors(phase_graph_limits[2]->GetN());
+    for (Int_t i = 0; i != phase_graph_limits[2]->GetN(); ++i)
+    {
+        Double_t x = phase_graph_limits[2]->GetPointX(i);
+        Double_t y = phase_graph_limits[2]->GetPointY(i);
+        Double_t y_f0 = phase_func_t_limits->Eval(x);
+        limits_no_cl_pad_phase_t->SetPoint(i, x, y - y_f0);
+    }
+
+    limits_no_cl_pad_phase_w->SetLineColor(kRed + 2);
+    limits_no_cl_pad_phase_t->SetLineColor(kBlue + 2);
+    TMultiGraph *limits_no_cl_pad_multi_phase = new TMultiGraph();
+    limits_no_cl_pad_multi_phase->Add(limits_no_cl_pad_phase_w);
+    limits_no_cl_pad_multi_phase->Add(limits_no_cl_pad_phase_t);
+    limits_no_cl_pad_multi_phase->GetXaxis()->SetLabelSize(0.04);
+    limits_no_cl_pad_multi_phase->GetYaxis()->SetLabelSize(0.03);
+    limits_no_cl_pad_multi_phase->GetXaxis()->SetTitle("Frequency (Hz)");
+    limits_no_cl_pad_multi_phase->GetYaxis()->SetNdivisions(-4);
+    limits_no_cl_pad_multi_phase->Draw("apl");
+
+    limits_no_cl_canvas->cd(2);
+
+    TLegend *limits_no_cl_legend_phase{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // limits_no_cl_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     limits_no_cl_legend_phase->SetNColumns(3);
     // RIGA 1
@@ -2204,6 +2701,10 @@ void rooting_rootest(Int_t input_n_blocks)
         limits_no_Cl_file << "\t\t[" << i << "] - " << phase_func_t_limits->GetParName(i) << " = " << phase_func_t_limits->GetParameter(i) << " +- " << phase_func_t_limits->GetParError(i) << '\n';
     limits_no_Cl_file.close();
 
+    // Save Canvas
+    limits_no_cl_canvas->Update();
+    limits_no_cl_canvas->SaveAs(("./risultati_finali/Sweep_" + GetSweepRange() + "/limits_no_cl_" + std::to_string(GetVoltage()) + ".png").c_str());
+
     // LIMITS - Cl 2 -----------------------------------------------------------------
     TGraphErrors *ampl_graph_limits_Cl2{new TGraphErrors(*ampl_graph_limits[1])};
     TGraphErrors *phase_graph_limits_Cl2{new TGraphErrors(*phase_graph_limits[1])};
@@ -2219,7 +2720,8 @@ void rooting_rootest(Int_t input_n_blocks)
     auto multi_ampl_lim_Cl_2{new TMultiGraph};
     auto multi_phase_lim_Cl_2{new TMultiGraph};
 
-    multi_ampl_lim_Cl_2->Add(ampl_graph_limits[0]);
+    if (!isCrossover())
+        multi_ampl_lim_Cl_2->Add(ampl_graph_limits[0]);
     multi_phase_lim_Cl_2->Add(phase_graph_limits[0]);
     multi_ampl_lim_Cl_2->Add(ampl_graph_limits_Cl2);
     multi_phase_lim_Cl_2->Add(phase_graph_limits_Cl2);
@@ -2243,18 +2745,63 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_lim_Cl_2->SetTitle("Amplitude - Frequency (Limited, Cl)");
     multi_phase_lim_Cl_2->SetTitle("Phase - Frequency (Limited, Cl)");
 
-    multi_ampl_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    // multi_ampl_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
     multi_ampl_lim_Cl_2->GetYaxis()->SetTitle("Amplitude (V)");
-    multi_phase_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_lim_Cl_2->GetYaxis()->SetTitle("Phase (rad)");
-    multi_phase_lim_Cl_2->GetYaxis()->SetTitleOffset(1.2f);
+    // multi_phase_lim_Cl_2->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_lim_Cl_2->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_lim_Cl_2->GetYaxis()->SetTitle("Phase shift (rad)");
+    multi_phase_lim_Cl_2->GetYaxis()->SetTitleOffset(1.5f);
 
     TCanvas *limits_Cl_2_canvas{new TCanvas{"limits_Cl_2_canvas", "Amplitude and Phase Limits_Cl_2", 0, 0, 1300, 700}};
     limits_Cl_2_canvas->Divide(2, 1);
     limits_Cl_2_canvas->cd(1);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_ampl_lim_Cl_2->Draw("ape");
 
-    TLegend *limits_cl_2_legend_ampl{new TLegend()};
+    TPad *limits_Cl_2_pad_residual_ampl = new TPad("pad", "pad", 0., 0., 1., 1.);
+    limits_Cl_2_pad_residual_ampl->SetTopMargin(0.8);
+    limits_Cl_2_pad_residual_ampl->Draw();
+    limits_Cl_2_pad_residual_ampl->SetFillStyle(0);
+    limits_Cl_2_pad_residual_ampl->cd();
+    limits_Cl_2_pad_residual_ampl->SetGridy();
+
+    TGraphErrors *limits_Cl_2_pad_ampl_w = new TGraphErrors(ampl_graph_limits[1]->GetN());
+    for (Int_t i = 0; i != ampl_graph_limits[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph_limits[1]->GetPointX(i);
+        Double_t y = ampl_graph_limits[1]->GetPointY(i);
+        Double_t y_f0 = ampl_func_w_2_limits->Eval(x);
+        limits_Cl_2_pad_ampl_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *limits_Cl_2_pad_ampl_t = new TGraphErrors(ampl_graph_limits[2]->GetN());
+    for (Int_t i = 0; i != ampl_graph_limits[2]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph_limits[2]->GetPointX(i);
+        Double_t y = ampl_graph_limits[2]->GetPointY(i);
+        Double_t y_f0 = ampl_func_t_limits->Eval(x);
+        limits_Cl_2_pad_ampl_t->SetPoint(i, x, y - y_f0);
+    }
+
+    limits_Cl_2_pad_ampl_w->SetLineColor(kRed + 2);
+    limits_Cl_2_pad_ampl_t->SetLineColor(kBlue + 2);
+    TMultiGraph *limits_Cl_2_pad_multi_ampl = new TMultiGraph();
+    limits_Cl_2_pad_multi_ampl->Add(limits_Cl_2_pad_ampl_w);
+    limits_Cl_2_pad_multi_ampl->Add(limits_Cl_2_pad_ampl_t);
+    limits_Cl_2_pad_multi_ampl->GetXaxis()->SetLabelSize(0.04);
+    limits_Cl_2_pad_multi_ampl->GetYaxis()->SetLabelSize(0.03);
+    limits_Cl_2_pad_multi_ampl->GetXaxis()->SetTitle("Frequency (Hz)");
+    limits_Cl_2_pad_multi_ampl->GetYaxis()->SetNdivisions(-4);
+    limits_Cl_2_pad_multi_ampl->Draw("apl");
+    limits_Cl_2_canvas->cd(1);
+
+    TLegend *limits_cl_2_legend_ampl{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // limits_cl_2_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     limits_cl_2_legend_ampl->SetNColumns(3);
     // RIGA 1
@@ -2281,9 +2828,53 @@ void rooting_rootest(Int_t input_n_blocks)
     limits_cl_2_legend_ampl->Draw();
 
     limits_Cl_2_canvas->cd(2);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
     multi_phase_lim_Cl_2->Draw("ape");
 
-    TLegend *limits_cl_2_legend_phase{new TLegend()};
+    TPad *limits_Cl_2_pad_residual_phase = new TPad("pad", "pad", 0., 0., 1., 1.);
+    limits_Cl_2_pad_residual_phase->SetTopMargin(0.8);
+    limits_Cl_2_pad_residual_phase->Draw();
+    limits_Cl_2_pad_residual_phase->SetFillStyle(0);
+    limits_Cl_2_pad_residual_phase->cd();
+    limits_Cl_2_pad_residual_phase->SetGridy();
+
+    TGraphErrors *limits_Cl_2_pad_phase_w = new TGraphErrors(phase_graph_limits[1]->GetN());
+    for (Int_t i = 0; i != phase_graph_limits[1]->GetN(); ++i)
+    {
+        Double_t x = phase_graph_limits[1]->GetPointX(i);
+        Double_t y = phase_graph_limits[1]->GetPointY(i);
+        Double_t y_f0 = phase_func_w_2_limits->Eval(x);
+        limits_Cl_2_pad_phase_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *limits_Cl_2_pad_phase_t = new TGraphErrors(phase_graph_limits[2]->GetN());
+    for (Int_t i = 0; i != phase_graph_limits[2]->GetN(); ++i)
+    {
+        Double_t x = phase_graph_limits[2]->GetPointX(i);
+        Double_t y = phase_graph_limits[2]->GetPointY(i);
+        Double_t y_f0 = phase_func_t_limits->Eval(x);
+        limits_Cl_2_pad_phase_t->SetPoint(i, x, y - y_f0);
+    }
+
+    limits_Cl_2_pad_phase_w->SetLineColor(kRed + 2);
+    limits_Cl_2_pad_phase_t->SetLineColor(kBlue + 2);
+    TMultiGraph *limits_Cl_2_pad_multi_phase = new TMultiGraph();
+    limits_Cl_2_pad_multi_phase->Add(limits_Cl_2_pad_phase_w);
+    limits_Cl_2_pad_multi_phase->Add(limits_Cl_2_pad_phase_t);
+    limits_Cl_2_pad_multi_phase->GetXaxis()->SetLabelSize(0.04);
+    limits_Cl_2_pad_multi_phase->GetYaxis()->SetLabelSize(0.03);
+    limits_Cl_2_pad_multi_phase->GetXaxis()->SetTitle("Frequency (Hz)");
+    limits_Cl_2_pad_multi_phase->GetYaxis()->SetNdivisions(-4);
+    limits_Cl_2_pad_multi_phase->Draw("apl");
+
+    limits_Cl_2_canvas->cd(2);
+
+    TLegend *limits_cl_2_legend_phase{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // limits_cl_2_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     limits_cl_2_legend_phase->SetNColumns(3);
     // RIGA 1
@@ -2346,6 +2937,10 @@ void rooting_rootest(Int_t input_n_blocks)
         limits_Cl_2_file << "\t\t[" << i << "] - " << phase_func_t_limits->GetParName(i) << " = " << phase_func_t_limits->GetParameter(i) << " +- " << phase_func_t_limits->GetParError(i) << '\n';
     limits_Cl_2_file.close();
 
+    // Save Canvas
+    limits_Cl_2_canvas->Update();
+    limits_Cl_2_canvas->SaveAs(("./risultati_finali/Sweep_" + GetSweepRange() + "/limits_Cl_2_" + std::to_string(GetVoltage()) + ".png").c_str());
+
     // NO LIMITS - Cl 3 -----------------------------------------------------------------
     TGraphErrors *ampl_graph_limits_Cl3{new TGraphErrors(*ampl_graph_limits[1])};
     TGraphErrors *phase_graph_limits_Cl3{new TGraphErrors(*phase_graph_limits[1])};
@@ -2361,7 +2956,8 @@ void rooting_rootest(Int_t input_n_blocks)
     auto multi_ampl_lim_Cl_3{new TMultiGraph};
     auto multi_phase_lim_Cl_3{new TMultiGraph};
 
-    multi_ampl_lim_Cl_3->Add(ampl_graph_limits[0]);
+    if (!isCrossover())
+        multi_ampl_lim_Cl_3->Add(ampl_graph_limits[0]);
     multi_phase_lim_Cl_3->Add(phase_graph_limits[0]);
     multi_ampl_lim_Cl_3->Add(ampl_graph_limits_Cl3);
     multi_phase_lim_Cl_3->Add(phase_graph_limits_Cl3);
@@ -2386,18 +2982,62 @@ void rooting_rootest(Int_t input_n_blocks)
     multi_ampl_lim_Cl_3->SetTitle("Amplitude - Frequency (Limited, Cl)");
     multi_phase_lim_Cl_3->SetTitle("Phase - Frequency (Limited, Cl)");
 
-    multi_ampl_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    // multi_ampl_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_ampl_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
     multi_ampl_lim_Cl_3->GetYaxis()->SetTitle("Amplitude (V)");
-    multi_phase_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
-    multi_phase_lim_Cl_3->GetYaxis()->SetTitle("Phase (rad)");
-    multi_phase_lim_Cl_3->GetYaxis()->SetTitleOffset(1.2f);
+    // multi_phase_lim_Cl_3->GetXaxis()->SetTitle("Frequency (Hz)");
+    multi_phase_lim_Cl_3->GetXaxis()->SetLabelColor(1,0.f);
+    multi_phase_lim_Cl_3->GetYaxis()->SetTitle("Phase shift (rad)");
+    multi_phase_lim_Cl_3->GetYaxis()->SetTitleOffset(1.5f);
 
     TCanvas *limits_Cl_3_canvas{new TCanvas{"limits_Cl_3_canvas", "Amplitude and Phase Limits_Cl_3", 0, 0, 1300, 700}};
     limits_Cl_3_canvas->Divide(2, 1);
     limits_Cl_3_canvas->cd(1);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
     multi_ampl_lim_Cl_3->Draw("ape");
 
-    TLegend *limits_cl_3_legend_ampl{new TLegend()};
+    TPad *limits_Cl_3_pad_residual_ampl = new TPad("pad", "pad", 0., 0., 1., 1.);
+    limits_Cl_3_pad_residual_ampl->SetTopMargin(0.8);
+    limits_Cl_3_pad_residual_ampl->Draw();
+    limits_Cl_3_pad_residual_ampl->SetFillStyle(0);
+    limits_Cl_3_pad_residual_ampl->cd();
+    limits_Cl_3_pad_residual_ampl->SetGridy();
+
+    TGraphErrors *limits_Cl_3_pad_ampl_w = new TGraphErrors(ampl_graph_limits[1]->GetN());
+    for (Int_t i = 0; i != ampl_graph_limits[1]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph_limits[1]->GetPointX(i);
+        Double_t y = ampl_graph_limits[1]->GetPointY(i);
+        Double_t y_f0 = ampl_func_w_3_limits->Eval(x);
+        limits_Cl_3_pad_ampl_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *limits_Cl_3_pad_ampl_t = new TGraphErrors(ampl_graph_limits[2]->GetN());
+    for (Int_t i = 0; i != ampl_graph_limits[2]->GetN(); ++i)
+    {
+        Double_t x = ampl_graph_limits[2]->GetPointX(i);
+        Double_t y = ampl_graph_limits[2]->GetPointY(i);
+        Double_t y_f0 = ampl_func_t_limits->Eval(x);
+        limits_Cl_3_pad_ampl_t->SetPoint(i, x, y - y_f0);
+    }
+
+    limits_Cl_3_pad_ampl_w->SetLineColor(kRed + 2);
+    limits_Cl_3_pad_ampl_t->SetLineColor(kBlue + 2);
+    TMultiGraph *limits_Cl_3_pad_multi_ampl = new TMultiGraph();
+    limits_Cl_3_pad_multi_ampl->Add(limits_Cl_3_pad_ampl_w);
+    limits_Cl_3_pad_multi_ampl->Add(limits_Cl_3_pad_ampl_t);
+    limits_Cl_3_pad_multi_ampl->GetXaxis()->SetLabelSize(0.04);
+    limits_Cl_3_pad_multi_ampl->GetYaxis()->SetLabelSize(0.03);
+    limits_Cl_3_pad_multi_ampl->GetXaxis()->SetTitle("Frequency (Hz)");
+    limits_Cl_3_pad_multi_ampl->GetYaxis()->SetNdivisions(-4);
+    limits_Cl_3_pad_multi_ampl->Draw("apl");
+    limits_Cl_3_canvas->cd(1);
+
+    TLegend *limits_cl_3_legend_ampl{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // limits_cl_3_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     limits_cl_3_legend_ampl->SetNColumns(3);
     // RIGA 1
@@ -2424,9 +3064,51 @@ void rooting_rootest(Int_t input_n_blocks)
     limits_cl_3_legend_ampl->Draw();
 
     limits_Cl_3_canvas->cd(2);
+
+    // for residual and legend
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
     multi_phase_lim_Cl_3->Draw("ape");
 
-    TLegend *limits_cl_3_legend_phase{new TLegend()};
+    TPad *limits_Cl_3_pad_residual_phase = new TPad("pad", "pad", 0., 0., 1., 1.);
+    limits_Cl_3_pad_residual_phase->SetTopMargin(0.8);
+    limits_Cl_3_pad_residual_phase->Draw();
+    limits_Cl_3_pad_residual_phase->SetFillStyle(0);
+    limits_Cl_3_pad_residual_phase->cd();
+    limits_Cl_3_pad_residual_phase->SetGridy();
+
+    TGraphErrors *limits_Cl_3_pad_phase_w = new TGraphErrors(phase_graph_limits[1]->GetN());
+    for (Int_t i = 0; i != phase_graph_limits[1]->GetN(); ++i)
+    {
+        Double_t x = phase_graph_limits[1]->GetPointX(i);
+        Double_t y = phase_graph_limits[1]->GetPointY(i);
+        Double_t y_f0 = phase_func_w_3_limits->Eval(x);
+        limits_Cl_3_pad_phase_w->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *limits_Cl_3_pad_phase_t = new TGraphErrors(phase_graph_limits[2]->GetN());
+    for (Int_t i = 0; i != phase_graph_limits[2]->GetN(); ++i)
+    {
+        Double_t x = phase_graph_limits[2]->GetPointX(i);
+        Double_t y = phase_graph_limits[2]->GetPointY(i);
+        Double_t y_f0 = phase_func_t_limits->Eval(x);
+        limits_Cl_3_pad_phase_t->SetPoint(i, x, y - y_f0);
+    }
+
+    limits_Cl_3_pad_phase_w->SetLineColor(kRed + 2);
+    limits_Cl_3_pad_phase_t->SetLineColor(kBlue + 2);
+    TMultiGraph *limits_Cl_3_pad_multi_phase = new TMultiGraph();
+    limits_Cl_3_pad_multi_phase->Add(limits_Cl_3_pad_phase_w);
+    limits_Cl_3_pad_multi_phase->Add(limits_Cl_3_pad_phase_t);
+    limits_Cl_3_pad_multi_phase->GetXaxis()->SetLabelSize(0.04);
+    limits_Cl_3_pad_multi_phase->GetYaxis()->SetLabelSize(0.03);
+    limits_Cl_3_pad_multi_phase->GetXaxis()->SetTitle("Frequency (Hz)");
+    limits_Cl_3_pad_multi_phase->GetYaxis()->SetNdivisions(-4);
+    limits_Cl_3_pad_multi_phase->Draw("apl");
+    limits_Cl_3_canvas->cd(2);
+
+    TLegend *limits_cl_3_legend_phase{new TLegend(0.01, 0.8, 0.99, 0.93)};
     // limits_cl_3_legend_phase->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
     limits_cl_3_legend_phase->SetNColumns(3);
     // RIGA 1
@@ -2488,4 +3170,11 @@ void rooting_rootest(Int_t input_n_blocks)
     for (int i = 0; i != phase_func_t_limits->GetNpar(); ++i)
         limits_Cl_3_file << "\t\t[" << i << "] - " << phase_func_t_limits->GetParName(i) << " = " << phase_func_t_limits->GetParameter(i) << " +- " << phase_func_t_limits->GetParError(i) << '\n';
     limits_Cl_3_file.close();
+
+    // Save Canvas
+    limits_Cl_3_canvas->Update();
+    limits_Cl_3_canvas->SaveAs(("./risultati_finali/Sweep_" + GetSweepRange() + "/limits_Cl_3_" + std::to_string(GetVoltage()) + ".png").c_str());
+    limits_Cl_3_canvas->Update();
+
+    
 }
