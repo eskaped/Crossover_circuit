@@ -141,6 +141,10 @@ std::string NumErrScien(double x, double x_err, std::string name_par)
     case 'C':
         um_str = "F"; // farad
         break;
+
+    case 'S':
+        um_str = "s"; // seconds
+        break;
     default:
         um_str = "";
         break;
@@ -802,9 +806,9 @@ void PhaseShiftError(int n_blocks_input)
             new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %*lg %lg %lg %lg"}};
 
         TF1 *func_arr[3]{
-            new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
-            new TF1{"V_w_fit", "[0]*cos([1]*x - [2])"},
-            new TF1{"V_t_fit", "[0]*cos([1]*x - [2])"}};
+            new TF1{"V_s_fit", "[0]*cos([1]*x - [2]) + [3]"},
+            new TF1{"V_w_fit", "[0]*cos([1]*x - [2]) + [3]"},
+            new TF1{"V_t_fit", "[0]*cos([1]*x - [2]) + [3]"}};
 
         std::ifstream file_params_in{output_param_filename + std::to_string(n_block) + ".txt"};
         double frequency;
@@ -826,6 +830,7 @@ void PhaseShiftError(int n_blocks_input)
             func_arr[i]->SetParameter(0, amplitude);
             func_arr[i]->SetParameter(1, pulsation);
             func_arr[i]->SetParameter(2, phase);
+            func_arr[i]->SetParameter(3, -0.0117464);
 
             // func_arr[i]->SetParLimits(0, amplitude - amplitude / 10., amplitude + amplitude / 10.);
             // func_arr[i]->SetParLimits(1, pulsation - pulsation / 10., pulsation + pulsation / 10.);
@@ -889,64 +894,108 @@ void PhaseShiftError(int n_blocks_input)
         }
     }
 
+    // remove phase[0] from the phases data
+    for (int i = 0; i != N_BLOCKS; ++i)
+    {
+        // also invert the "phases" as now they are [2] cos(wt - [2]) => they are = -true phase
+        phase_arr[0][i] = -phase_arr[0][i];
+        phase_arr[1][i] = -phase_arr[1][i];
+        phase_arr[2][i] = -phase_arr[2][i];
+
+        // remove [0] to get the phase shift
+        phase_arr[2][i] -= phase_arr[0][i];
+        phase_arr[1][i] -= phase_arr[0][i];
+        phase_arr[0][i] -= phase_arr[0][i];
+
+        // sum errors
+        phase_arr[1][i] = std::sqrt(phase_arr[0][i] * phase_arr[0][i] + phase_arr[1][i] * phase_arr[1][i]);
+        phase_arr[2][i] = std::sqrt(phase_arr[0][i] * phase_arr[0][i] + phase_arr[2][i] * phase_arr[2][i]);
+        phase_err_arr[0][i] = 0;
+    }
+
     TGraphErrors *phase_shift_graph[3];
     TF1 *func_phase_shift[3];
     for (int i = 0; i != 3; ++i)
     {
         phase_shift_graph[i] = new TGraphErrors(N_BLOCKS, freq_arr, phase_arr[i], freq_err_arr, phase_err_arr[i]);
-        func_phase_shift[i] = new TF1(("func_phase_shift_" + std::to_string(i)).c_str(), "[0]+[1]*x", 0., 25000.);
-        func_phase_shift[i]->SetParName(0, "intercept");
-        func_phase_shift[i]->SetParName(1, "slope");
+        func_phase_shift[i] = new TF1(("func_phase_shift_" + std::to_string(i)).c_str(), "[0]*x", 0., 25000.);
+        func_phase_shift[i]->SetParName(0, "Slope");
         // func_phase_shift[i]->SetParameter(1, -TMath::PiOver2());
     }
     // func_phase_shift[0]->SetParameter(0, 0);
     // func_phase_shift[1]->SetParameter(0, -9.6E-6);
     // func_phase_shift[2]->SetParameter(0, -2.64E-5);
 
-    // REGRESSIONE LINEARE y = A + Bx
-    for (int i = 0; i != 3; ++i)
+    // // REGRESSIONE LINEARE y = A + Bx
+    // for (int i = 0; i != 3; ++i)
+    // {
+    //     Double_t sum_wx2 = 0;
+    //     Double_t sum_wx = 0;
+    //     Double_t sum_w = 0;
+    //     for (int j = 0; j != N_BLOCKS; ++j)
+    //     {
+    //         Double_t w = 1 / (phase_err_arr[i][j] * phase_err_arr[i][j]);
+    //         Double_t x = freq_arr[j];
+
+    //         sum_wx2 += w * x * x;
+    //         sum_wx += w * x;
+    //         sum_w += w;
+    //     }
+
+    //     Double_t delta_w = sum_w * sum_wx2 - sum_wx * sum_wx;
+    //     Double_t A{0.};
+    //     Double_t B{0.};
+    //     Double_t A_err{std::sqrt(sum_wx2 / delta_w)};
+    //     Double_t B_err{std::sqrt(sum_w / delta_w)};
+
+    //     for (int j = 0; j != N_BLOCKS; ++j)
+    //     {
+    //         Double_t w = 1 / (phase_err_arr[i][j] * phase_err_arr[i][j]);
+    //         Double_t x = freq_arr[j];
+    //         Double_t y = phase_arr[i][j];
+
+    //         Double_t alpha = (w * sum_wx2 - w * x * sum_wx) / delta_w;
+    //         Double_t beta = (w * x * sum_w - w * sum_wx) / delta_w;
+
+    //         A += alpha * y;
+    //         B += beta * y;
+    //     }
+
+    //     func_phase_shift[i]->SetParameter(0, A);
+    //     func_phase_shift[i]->SetParameter(1, B);
+    //     func_phase_shift[i]->SetParError(0, A_err);
+    //     func_phase_shift[i]->SetParError(1, B_err);
+    // }
+
+    // REGRESSIONE LINEARE y = Bx
+    for (int i = 1; i != 3; ++i)
     {
         Double_t sum_wx2 = 0;
-        Double_t sum_wx = 0;
-        Double_t sum_w = 0;
-        for (int j = 0; j != N_BLOCKS; ++j)
-        {
-            Double_t w = 1 / (phase_err_arr[i][j] * phase_err_arr[i][j]);
-            Double_t x = freq_arr[j];
-
-            sum_wx2 += w * x * x;
-            sum_wx += w * x;
-            sum_w += w;
-        }
-
-        Double_t delta_w = sum_w * sum_wx2 - sum_wx * sum_wx;
-        Double_t A{0.};
-        Double_t B{0.};
-        Double_t A_err{std::sqrt(sum_wx2 / delta_w)};
-        Double_t B_err{std::sqrt(sum_w / delta_w)};
-
+        Double_t sum_wxy = 0;
         for (int j = 0; j != N_BLOCKS; ++j)
         {
             Double_t w = 1 / (phase_err_arr[i][j] * phase_err_arr[i][j]);
             Double_t x = freq_arr[j];
             Double_t y = phase_arr[i][j];
 
-            Double_t alpha = (w * sum_wx2 - w * x * sum_wx) / delta_w;
-            Double_t beta = (w * x * sum_w - w * sum_wx) / delta_w;
-
-            A += alpha * y;
-            B += beta * y;
+            sum_wx2 += w * x * x;
+            sum_wxy += w * x * y;
         }
 
-        func_phase_shift[i]->SetParameter(0, A);
-        func_phase_shift[i]->SetParameter(1, B);
-        func_phase_shift[i]->SetParError(0, A_err);
-        func_phase_shift[i]->SetParError(1, B_err);
+        Double_t B{sum_wxy / sum_wx2};
+        Double_t B_err{1. / std::sqrt(sum_wx2)};
+
+        func_phase_shift[i]->SetParameter(0, B);
+        func_phase_shift[i]->SetParError(0, B_err);
     }
 
-    func_phase_shift[0]->SetLineColor(kBlack);
-    func_phase_shift[1]->SetLineColor(kRed);
-    func_phase_shift[2]->SetLineColor(kBlue);
+    // by definition the phase shift of [0] is null
+    func_phase_shift[0]->SetParameter(0, 0);
+    func_phase_shift[0]->SetParError(0, 0);
+
+    func_phase_shift[0]->SetLineColor(kGray + 2);
+    func_phase_shift[1]->SetLineColor(kRed + 2);
+    func_phase_shift[2]->SetLineColor(kBlue + 2);
 
     phase_shift_graph[0]->SetLineColor(kBlack);
     phase_shift_graph[1]->SetLineColor(kRed);
@@ -969,13 +1018,94 @@ void PhaseShiftError(int n_blocks_input)
     }
 
     TCanvas *phase_shift_canvas = new TCanvas("phase_shift_canvas", "Phase Shift", 0, 0, 800, 600);
+
+    gPad->SetGridy();
+    gPad->SetBottomMargin(0.2);
+    gPad->SetTopMargin(0.2);
+
+    phase_shift_multi->GetYaxis()->SetTitle("Phase shift (rad)");
+
     phase_shift_multi->Draw("APE");
     for (int i = 0; i != 3; ++i)
-    {
         func_phase_shift[i]->Draw("SAME");
+
+    TPad *residual_pad = new TPad("pad", "pad", 0., 0., 1., 1.);
+    residual_pad->SetTopMargin(0.8);
+    residual_pad->Draw();
+    residual_pad->SetFillStyle(0);
+    residual_pad->cd();
+    residual_pad->SetGridy();
+
+    TGraphErrors *residual_0 = new TGraphErrors(phase_shift_graph[0]->GetN());
+    for (Int_t i = 0; i != phase_shift_graph[0]->GetN(); ++i)
+    {
+        Double_t x = phase_shift_graph[0]->GetPointX(i);
+        Double_t y = phase_shift_graph[0]->GetPointY(i);
+        Double_t y_f0 = func_phase_shift[0]->Eval(x);
+        residual_0->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *residual_1 = new TGraphErrors(phase_shift_graph[1]->GetN());
+    for (Int_t i = 0; i != phase_shift_graph[1]->GetN(); ++i)
+    {
+        Double_t x = phase_shift_graph[1]->GetPointX(i);
+        Double_t y = phase_shift_graph[1]->GetPointY(i);
+        Double_t y_f0 = func_phase_shift[1]->Eval(x);
+        residual_1->SetPoint(i, x, y - y_f0);
+    }
+
+    TGraphErrors *residual_2 = new TGraphErrors(phase_shift_graph[2]->GetN());
+    for (Int_t i = 0; i != phase_shift_graph[2]->GetN(); ++i)
+    {
+        Double_t x = phase_shift_graph[2]->GetPointX(i);
+        Double_t y = phase_shift_graph[2]->GetPointY(i);
+        Double_t y_f0 = func_phase_shift[2]->Eval(x);
+        residual_2->SetPoint(i, x, y - y_f0);
+    }
+
+    residual_0->SetLineColor(kGray + 2);
+    residual_1->SetLineColor(kRed + 2);
+    residual_2->SetLineColor(kBlue + 2);
+    TMultiGraph *residuals = new TMultiGraph();
+    residuals->Add(residual_0);
+    residuals->Add(residual_1);
+    residuals->Add(residual_2);
+    residuals->GetXaxis()->SetLabelSize(0.04);
+    residuals->GetYaxis()->SetLabelSize(0.03);
+    residuals->GetXaxis()->SetTitle("Frequency (Hz)");
+    residuals->GetYaxis()->SetNdivisions(-4);
+    residuals->Draw("apl");
+
+    phase_shift_canvas->cd(1);
+
+    TLegend *phase_shift_legend{new TLegend(0.01, 0.8, 0.99, 0.93)};
+    // no_limits_no_cl_legend_ampl->SetHeader("Amplitude - Frequency", "C"); // option "C" allows to center the header
+    phase_shift_legend->SetNColumns(4);
+    // RIGA 1
+    phase_shift_legend->AddEntry(phase_shift_graph[0], "Phase shift AI0", "ep");
+    phase_shift_legend->AddEntry(func_phase_shift[0], "Phase shift AI0 Fit", "l");
+    phase_shift_legend->AddEntry((TObject *)0, (std::string(func_phase_shift[0]->GetParName(0)) + " = " + NumErrScien(func_phase_shift[0]->GetParameter(0), func_phase_shift[0]->GetParError(0), func_phase_shift[0]->GetParName(0))).c_str(), "");
+    phase_shift_legend->AddEntry((TObject *)0, ("#Deltat = " + NumErrScien(func_phase_shift[0]->GetParameter(0) / TMath::TwoPi(), func_phase_shift[0]->GetParError(0) / TMath::TwoPi(), func_phase_shift[0]->GetParName(0))).c_str(), "");
+
+    // RIGA 2
+    phase_shift_legend->AddEntry(phase_shift_graph[1], "Phase shift AI1", "ep");
+    phase_shift_legend->AddEntry(func_phase_shift[1], "Phase shift AI1 Fit", "l");
+    phase_shift_legend->AddEntry((TObject *)0, (std::string(func_phase_shift[1]->GetParName(0)) + " = " + NumErrScien(func_phase_shift[1]->GetParameter(0), func_phase_shift[1]->GetParError(0), func_phase_shift[1]->GetParName(0))).c_str(), "");
+    phase_shift_legend->AddEntry((TObject *)0, ("#Deltat = " + NumErrScien(func_phase_shift[1]->GetParameter(0) / TMath::TwoPi(), func_phase_shift[1]->GetParError(0) / TMath::TwoPi(), func_phase_shift[1]->GetParName(0))).c_str(), "");
+
+    // RIGA 3
+    phase_shift_legend->AddEntry(phase_shift_graph[2], "Phase shift AI2", "ep");
+    phase_shift_legend->AddEntry(func_phase_shift[2], "Phase shift AI2 Fit", "l");
+    phase_shift_legend->AddEntry((TObject *)0, (std::string(func_phase_shift[2]->GetParName(0)) + " = " + NumErrScien(func_phase_shift[2]->GetParameter(0), func_phase_shift[2]->GetParError(0), func_phase_shift[2]->GetParName(0))).c_str(), "");
+    phase_shift_legend->AddEntry((TObject *)0, ("#Deltat = " + NumErrScien(func_phase_shift[2]->GetParameter(0) / TMath::TwoPi(), func_phase_shift[2]->GetParError(0) / TMath::TwoPi(), func_phase_shift[2]->GetParName(0))).c_str(), "");
+
+    phase_shift_legend->Draw();
+
+    for (int i = 0; i != 3; ++i)
+    {
         std::cout << "FUNC_ARRAY[" << i << "]\n";
         std::cout << func_phase_shift[i]->GetParName(0) << ": " << func_phase_shift[i]->GetParameter(0) << " +- " << func_phase_shift[i]->GetParError(0) << '\n';
-        std::cout << func_phase_shift[i]->GetParName(1) << ": " << func_phase_shift[i]->GetParameter(1) << " +- " << func_phase_shift[i]->GetParError(1) << '\n';
+        // std::cout << func_phase_shift[i]->GetParName(1) << ": " << func_phase_shift[i]->GetParameter(1) << " +- " << func_phase_shift[i]->GetParError(1) << '\n';
     }
 
     // for (int i = 0; i != 3; ++i)
@@ -1270,8 +1400,6 @@ void rooting_rootest(Int_t input_n_blocks)
     Double_t MIN_FIT = 500;
     Double_t MAX_FIT = 700;
 
-
-
     N_BLOCKS = input_n_blocks;
     SamuStyle();
     std::ifstream file_count{"./input_data/ampl_data"};
@@ -1438,28 +1566,46 @@ void rooting_rootest(Int_t input_n_blocks)
 
     for (int i = 1; i != 3; ++i)
     {
-        Double_t A_0{func_phase_shift[0]->GetParameter(0)};
-        Double_t B_0{func_phase_shift[0]->GetParameter(1)};
-        Double_t A_0_err{func_phase_shift[0]->GetParError(0)};
-        Double_t B_0_err{func_phase_shift[0]->GetParError(1)};
+        // Double_t A_0{func_phase_shift[0]->GetParameter(0)};
+        // Double_t B_0{func_phase_shift[0]->GetParameter(1)};
+        // Double_t A_0_err{func_phase_shift[0]->GetParError(0)};
+        // Double_t B_0_err{func_phase_shift[0]->GetParError(1)};
 
-        Double_t A{func_phase_shift[i]->GetParameter(0)};
-        Double_t B{func_phase_shift[i]->GetParameter(1)};
-        Double_t A_err{func_phase_shift[i]->GetParError(0)};
-        Double_t B_err{func_phase_shift[i]->GetParError(1)};
+        // Double_t A{func_phase_shift[i]->GetParameter(0)};
+        // Double_t B{func_phase_shift[i]->GetParameter(1)};
+        // Double_t A_err{func_phase_shift[i]->GetParError(0)};
+        // Double_t B_err{func_phase_shift[i]->GetParError(1)};
+
+        // for (int n_block = 0; n_block != N_BLOCKS; ++n_block)
+        // {
+        //     Double_t f{freq_arr[n_block]};
+        //     Double_t f_err{freq_err_arr[n_block]};
+        //     Double_t phase_0 = A_0 + B_0 * f;
+        //     Double_t phase_i = A + B * f;
+        //     Double_t phase_correction = phase_i - phase_0;
+        //     phase_arr[i][n_block] -= phase_correction;
+
+        //     // NOTA: SBAGLIATO, MANCA LA COVARIANZA TRA A E B
+        //     Double_t phase_correction_err = std::sqrt(A_0_err * A_0_err + A_err * A_err + (f_err * B_0) * (f_err * B_0) + (f_err * B) * (f_err * B) + ((B - B_0) * f_err) * ((B - B_0) * f_err));
+        //     phase_err_arr[i][n_block] = std::sqrt(phase_err_arr[i][n_block] * phase_err_arr[i][n_block] + phase_correction_err * phase_correction_err);
+        // }
+
+        Double_t B{func_phase_shift[i]->GetParameter(0)};
+        Double_t B_err{func_phase_shift[i]->GetParError(0)};
 
         for (int n_block = 0; n_block != N_BLOCKS; ++n_block)
         {
             Double_t f{freq_arr[n_block]};
             Double_t f_err{freq_err_arr[n_block]};
-            Double_t phase_0 = A_0 + B_0 * f;
-            Double_t phase_i = A + B * f;
-            Double_t phase_correction = phase_i - phase_0;
-            phase_arr[i][n_block] -= phase_correction;
+            Double_t phase_correction = B * f;
+            //+ As they are still inverted
+            phase_arr[i][n_block] += phase_correction;
 
-            // NOTA: SBAGLIATO, MANCA LA COVARIANZA TRA A E B
-            Double_t phase_correction_err = std::sqrt(A_0_err * A_0_err + A_err * A_err + (f_err * B_0) * (f_err * B_0) + (f_err * B) * (f_err * B) + ((B - B_0) * f_err) * ((B - B_0) * f_err));
+            Double_t phase_correction_err = std::sqrt(B * B * B_err * B_err + f * f * B_err * B_err);
             phase_err_arr[i][n_block] = std::sqrt(phase_err_arr[i][n_block] * phase_err_arr[i][n_block] + phase_correction_err * phase_correction_err);
+
+            // Double_t phase_correction_err = std::sqrt(A_0_err * A_0_err + A_err * A_err + (f_err * B_0) * (f_err * B_0) + (f_err * B) * (f_err * B) + ((B - B_0) * f_err) * ((B - B_0) * f_err));
+            // phase_err_arr[i][n_block] = std::sqrt(phase_err_arr[i][n_block] * phase_err_arr[i][n_block] + phase_correction_err * phase_correction_err);
         }
     }
 
@@ -1498,11 +1644,11 @@ void rooting_rootest(Int_t input_n_blocks)
     TF1 *phase_func_t{new TF1{"phase_func_t", phase_tweeter, 0., 25000., 3}};
 
     // with cl------------------------------------------------
-    TF1 *ampl_func_w_2{new TF1{"ampl_func_w", ampl_woofer_2, 0., 25000., 3}};
-    TF1 *phase_func_w_2{new TF1{"phase_func_w", phase_woofer_2, 0., 25000., 3}};
+    TF1 *ampl_func_w_2{new TF1{"ampl_func_w", ampl_woofer_2, 0., 25000., 4}};
+    TF1 *phase_func_w_2{new TF1{"phase_func_w", phase_woofer_2, 0., 25000., 4}};
 
-    TF1 *ampl_func_w_3{new TF1{"ampl_func_w", ampl_woofer_2, 0., 25000., 3}};
-    TF1 *phase_func_w_3{new TF1{"phase_func_w", phase_woofer_2, 0., 25000., 3}};
+    TF1 *ampl_func_w_3{new TF1{"ampl_func_w", ampl_woofer_2, 0., 25000., 4}};
+    TF1 *phase_func_w_3{new TF1{"phase_func_w", phase_woofer_2, 0., 25000., 4}};
     // with cl------------------------------------------------
 
     ampl_func_VS->SetNpx(100000);
@@ -1682,9 +1828,9 @@ void rooting_rootest(Int_t input_n_blocks)
 
     // FITTING WITHOUT LIMITS (No Cl)-------------------------
     // 1/(2pi)*sqrt((C*C*(R_w*R_w*(R_t+R_l1l2)*(R_t+R_l1l2) - R_t*R_t*(R_l+R_w)*(R_l+R_w)) + sqrt(C*C*C*C*(R_w*R_w*(R_t+R_l1l2)*(R_t+R_l1l2) - R_t*R_t*(R_l+R_w)*(R_l+R_w))*(R_w*R_w*(R_t+R_l1l2)*(R_t+R_l1l2) - R_t*R_t*(R_l+R_w)*(R_l+R_w)) + 4 *R_w*R_w*R_t*R_t*L*L*C*C ))/(2*L*L*C*C*R_t*R_t))
-    //R_w, R_t, R_l, R_l1l2, L, C
+    // R_w, R_t, R_l, R_l1l2, L, C
     //[220.32000,0.14737707], [220.19000, 0.10639549], [120.18250, 0.48897001], [121.83500, 0.45793013],[0.047154000, 0.00047154000],[0.0000014225000, 0.000000014225000]
-    
+
     //[192.0176023,0.109684324461364], [155.7258872, 0.0430284572390734], [108.6318597, 0.0721233730001343], [87.27564753, 0.0279570867606535],[0.04416795751, .000031079980085238],[0.000001975545041,.000000000671207244439028]
     ROOT::Math::MinimizerOptions::SetDefaultStrategy(2);
     int ampl_woofer_fit_res{ampl_graph[1]->Fit(ampl_func_w, "Q, M, E", "", MIN_FIT, MAX_FIT)};
@@ -1692,9 +1838,9 @@ void rooting_rootest(Int_t input_n_blocks)
     int ampl_tweeter_fit_res{ampl_graph[2]->Fit(ampl_func_t, "Q, M, E", "", MIN_FIT, MAX_FIT)};
     std::cout << std::endl;
 
-    int phase_woofer_fit_res{phase_graph[1]->Fit(phase_func_w, "Q, M, E","", MIN_FIT, MAX_FIT)};
+    int phase_woofer_fit_res{phase_graph[1]->Fit(phase_func_w, "Q, M, E", "", MIN_FIT, MAX_FIT)};
     std::cout << std::endl;
-    int phase_tweeter_fit_res{phase_graph[2]->Fit(phase_func_t, "Q, M, E","", MIN_FIT, MAX_FIT)};
+    int phase_tweeter_fit_res{phase_graph[2]->Fit(phase_func_t, "Q, M, E", "", MIN_FIT, MAX_FIT)};
     std::cout << std::endl;
 
     auto multi_ampl_no_lim_no_Cl{new TMultiGraph};
@@ -1732,10 +1878,10 @@ void rooting_rootest(Int_t input_n_blocks)
     gPad->SetTopMargin(0.2);
 
     multi_ampl_no_lim_no_Cl->Draw("ape");
-    TF1* ampl_func_w_ghost = new TF1(*ampl_func_w);
-    TF1* ampl_func_t_ghost = new TF1(*ampl_func_t);
-    ampl_func_w_ghost->SetLineColorAlpha(kRed+2,0.1);
-    ampl_func_t_ghost->SetLineColorAlpha(kBlue+2,0.1);
+    TF1 *ampl_func_w_ghost = new TF1(*ampl_func_w);
+    TF1 *ampl_func_t_ghost = new TF1(*ampl_func_t);
+    ampl_func_w_ghost->SetLineColorAlpha(kRed + 2, 0.1);
+    ampl_func_t_ghost->SetLineColorAlpha(kBlue + 2, 0.1);
     ampl_func_w_ghost->SetRange(0., 25000);
     ampl_func_t_ghost->SetRange(0., 25000);
     ampl_func_w_ghost->Draw("SAME");
@@ -1813,10 +1959,10 @@ void rooting_rootest(Int_t input_n_blocks)
     gPad->SetTopMargin(0.2);
 
     multi_phase_no_lim_no_Cl->Draw("ape");
-    TF1* phase_func_w_ghost = new TF1(*phase_func_w);
-    TF1* phase_func_t_ghost = new TF1(*phase_func_t);
-    phase_func_w_ghost->SetLineColorAlpha(kRed+2,0.1);
-    phase_func_t_ghost->SetLineColorAlpha(kBlue+2,0.1);
+    TF1 *phase_func_w_ghost = new TF1(*phase_func_w);
+    TF1 *phase_func_t_ghost = new TF1(*phase_func_t);
+    phase_func_w_ghost->SetLineColorAlpha(kRed + 2, 0.1);
+    phase_func_t_ghost->SetLineColorAlpha(kBlue + 2, 0.1);
     phase_func_w_ghost->SetRange(0., 25000);
     phase_func_t_ghost->SetRange(0., 25000);
     phase_func_w_ghost->Draw("SAME");
