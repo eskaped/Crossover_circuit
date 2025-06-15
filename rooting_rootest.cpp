@@ -469,12 +469,12 @@ void DrawBlock(int n_block)
     file_params_in.close();
 
     V_arr[0]->SetMarkerColor(kBlack);
-    V_arr[1]->SetMarkerColor(kRed);
-    V_arr[2]->SetMarkerColor(kBlue);
+    V_arr[1]->SetMarkerColor(kBlack);
+    V_arr[2]->SetMarkerColor(kBlack);
 
     V_arr[0]->SetLineColor(kBlack);
-    V_arr[1]->SetLineColor(kRed);
-    V_arr[2]->SetLineColor(kBlue);
+    V_arr[1]->SetLineColor(kBlack);
+    V_arr[2]->SetLineColor(kBlack);
 
     func_arr[0]->SetLineColor(kBlack);
     func_arr[1]->SetLineColor(kRed);
@@ -484,13 +484,18 @@ void DrawBlock(int n_block)
     func_arr[1]->SetNpx(10000);
     func_arr[2]->SetNpx(10000);
 
+
+
     TMultiGraph *V_multi = new TMultiGraph();
+    // V_multi->GetXaxis()->SetTitle("Time (s)");
+    // V_multi->GetYaxis()->SetTitle("Voltage (V)");
+    // V_multi->SetTitle("Elvis Step");
     V_multi->Add(V_arr[0]);
     V_multi->Add(V_arr[1]);
     V_multi->Add(V_arr[2]);
 
     TCanvas *test_canva = new TCanvas("test_canva", std::to_string(n_block).c_str(), 0, 0, 800, 600);
-    V_multi->Draw("AP");
+    V_multi->Draw("APE");
     func_arr[0]->Draw("SAME");
     func_arr[1]->Draw("SAME");
     func_arr[2]->Draw("SAME");
@@ -729,18 +734,18 @@ void FitBlock(int n_block, int only_Vi)
     std::cout << "RMS Cleaned Graph (to be added to error vpp): " << TMath::RMS(cleaned_graph->GetN(), cleaned_graph->GetY()) << std::endl;
 
     // TF1 *cleaned_func = new TF1("cleaned_func", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5]) + [6]*cos([7]*x - [8]) + [9]*cos([10]*x - [11]) + [12]*cos([13]*x-[14])");
-    TF1 *cleaned_func = new TF1("cleaned_func", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])");
-    Double_t base_ampl{func_arr[only_Vi]->GetParameter(0)};
-    Double_t base_puls{func_arr[only_Vi]->GetParameter(1)};
-    Double_t base_phase{func_arr[only_Vi]->GetParameter(2)};
+    // // TF1 *cleaned_func = new TF1("cleaned_func", "[0]*cos([1]*x - [2]) + [3]*cos([4]*x - [5])");
+    // Double_t base_ampl{func_arr[only_Vi]->GetParameter(0)};
+    // Double_t base_puls{func_arr[only_Vi]->GetParameter(1)};
+    // Double_t base_phase{func_arr[only_Vi]->GetParameter(2)};
 
-    // from fft
-    cleaned_func->SetParameter(0, base_ampl * 27. / 62'000.);
-    cleaned_func->SetParameter(1, base_puls * 22.5 / 11.5);
-    cleaned_func->SetParameter(2, base_phase);
-    cleaned_func->SetParameter(3, base_ampl * 16. / 62'000);
-    cleaned_func->SetParameter(4, base_puls * 33.5 / 11.5);
-    cleaned_func->SetParameter(5, base_phase);
+    // // from fft
+    // cleaned_func->SetParameter(0, base_ampl * 27. / 62'000.);
+    // cleaned_func->SetParameter(1, base_puls * 22.5 / 11.5);
+    // cleaned_func->SetParameter(2, base_phase);
+    // cleaned_func->SetParameter(3, base_ampl * 16. / 62'000);
+    // cleaned_func->SetParameter(4, base_puls * 33.5 / 11.5);
+    // cleaned_func->SetParameter(5, base_phase);
     // cleaned_func->SetParameter(6, base_ampl * 9. / 62'000);
     // cleaned_func->SetParameter(7, base_puls * 77.5 / 11.5);
     // cleaned_func->SetParameter(8, base_phase);
@@ -751,11 +756,11 @@ void FitBlock(int n_block, int only_Vi)
     // cleaned_func->SetParameter(13, base_puls * 4900. / 11.5);
     // cleaned_func->SetParameter(14, base_phase);
 
-    cleaned_func->SetNpx(10000);
-    cleaned_func->SetNumberFitPoints(10000);
-    cleaned_func->SetLineColor(kGreen);
-    cleaned_graph->Fit(cleaned_func, "M");
-    std::cout << "Chi ridotto:" << cleaned_func->GetChisquare() / cleaned_func->GetNDF() << std::endl;
+    // cleaned_func->SetNpx(10000);
+    // cleaned_func->SetNumberFitPoints(10000);
+    // cleaned_func->SetLineColor(kGreen);
+    // cleaned_graph->Fit(cleaned_func, "M");
+    // std::cout << "Chi ridotto:" << cleaned_func->GetChisquare() / cleaned_func->GetNDF() << std::endl;
 
     cleaned_graph->SetLineColor(kTeal);
     cleaned_graph->SetMarkerColor(kTeal);
@@ -765,27 +770,37 @@ void FitBlock(int n_block, int only_Vi)
     // V_arr[only_Vi]->GetYaxis()
     TMultiGraph *multigraph = new TMultiGraph();
     multigraph->Add(V_arr[only_Vi]);
-    multigraph->Add(cleaned_graph);
+    // multigraph->Add(cleaned_graph);
 
+    multigraph->GetXaxis()->SetTitle("Time (s)");
+    multigraph->GetYaxis()->SetTitle("Voltage (V)");
     TCanvas *test_canva = new TCanvas("test_canva", (std::to_string(n_block) + ", [" + std::to_string(only_Vi) + "]").c_str(), 0, 0, 800, 600);
     test_canva->Divide(2, 1);
     test_canva->cd(1);
     test_canva->SetGridy(1);
     multigraph->Draw("APE");
-
-    // fft-------------------------------------------------------------------------
-    TH1D *histo_cleaned = new TH1D("histo", "aa", cleaned_graph->GetN(), cleaned_graph->GetPointX(0), cleaned_graph->GetPointX(cleaned_graph->GetN() - 1));
-    for (int i = 1; i <= cleaned_graph->GetN(); ++i)
-    {
-        histo_cleaned->SetBinContent(i, cleaned_graph->GetPointY(i - 1));
-    }
-
-    TH1 *fft_result_histo{nullptr};
-    TVirtualFFT::SetTransform(nullptr);
-    fft_result_histo = histo_cleaned->FFT(fft_result_histo, "MAG, EX");
-
     test_canva->cd(2);
-    fft_result_histo->Draw();
+    test_canva->SetGridy(1);
+
+    TMultiGraph *multigraph_2 = new TMultiGraph();
+    multigraph_2->Add(V_arr[only_Vi]);
+    multigraph_2->Add(cleaned_graph);
+    multigraph_2->GetXaxis()->SetTitle("Time (s)");
+    multigraph_2->GetYaxis()->SetTitle("Voltage (V)");
+    multigraph_2->Draw("APE");
+    // // fft-------------------------------------------------------------------------
+    // TH1D *histo_cleaned = new TH1D("histo", "aa", cleaned_graph->GetN(), cleaned_graph->GetPointX(0), cleaned_graph->GetPointX(cleaned_graph->GetN() - 1));
+    // for (int i = 1; i <= cleaned_graph->GetN(); ++i)
+    // {
+    //     histo_cleaned->SetBinContent(i, cleaned_graph->GetPointY(i - 1));
+    // }
+
+    // TH1 *fft_result_histo{nullptr};
+    // TVirtualFFT::SetTransform(nullptr);
+    // fft_result_histo = histo_cleaned->FFT(fft_result_histo, "MAG, EX");
+
+    // test_canva->cd(2);
+    // fft_result_histo->Draw();
 }
 
 void PhaseShiftError(int n_blocks_input)
@@ -2627,12 +2642,12 @@ void rooting_rootest(Int_t input_n_blocks)
 
     // // PAR LIMITS-----------------------------------------------------------------
     double N_SIGMA = 5;
-    // ampl_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
-    // ampl_func_w_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
+    ampl_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
+    ampl_func_w_limits->SetParLimits(1, Rl - N_SIGMA * Rl_err, Rl + N_SIGMA * Rl_err);
     ampl_func_w_limits->SetParLimits(2, L - N_SIGMA * L_err, L + N_SIGMA * L_err);
 
-    // ampl_func_t_limits->SetParLimits(0, Rt - N_SIGMA * Rt_err, Rt + N_SIGMA * Rt_err);
-    // ampl_func_t_limits->SetParLimits(1, Rl1Rl2 - N_SIGMA * Rl1Rl2_err, Rl1Rl2 + N_SIGMA * Rl1Rl2_err);
+    ampl_func_t_limits->SetParLimits(0, Rt - N_SIGMA * Rt_err, Rt + N_SIGMA * Rt_err);
+    ampl_func_t_limits->SetParLimits(1, Rl1Rl2 - N_SIGMA * Rl1Rl2_err, Rl1Rl2 + N_SIGMA * Rl1Rl2_err);
     ampl_func_t_limits->SetParLimits(2, C1C2 - N_SIGMA * C1C2_err, C1C2 + N_SIGMA * C1C2_err);
 
     phase_func_w_limits->SetParLimits(0, Rw - N_SIGMA * Rw_err, Rw + N_SIGMA * Rw_err);
@@ -2682,7 +2697,7 @@ void rooting_rootest(Int_t input_n_blocks)
     phase_tweeter_fit_res = phase_graph_limits[2]->Fit(phase_func_t_limits, "Q, M, E, R");
     std::cout << std::endl;
 
-    auto multi_ampl_lim_no_Cl{new TMultiGraph};
+    auto multi_ampl_lim_no_Cl{new TMultiGraph("multi_ampl_lim_no_Cl", "Amplitude - Frequency (Limited, No Cl)")};
     auto multi_phase_lim_no_Cl{new TMultiGraph};
     for (int i = (isCrossover() ? 1 : 0); i != 3; ++i)
     {
@@ -2712,6 +2727,7 @@ void rooting_rootest(Int_t input_n_blocks)
     gPad->SetBottomMargin(0.2);
     gPad->SetTopMargin(0.2);
 
+    multi_ampl_lim_no_Cl->GetYaxis()->SetTitleOffset(-15);
     multi_ampl_lim_no_Cl->Draw("ape");
 
     TPad *limits_no_cl_pad_residual = new TPad("pad", "pad", 0., 0., 1., 1.);
