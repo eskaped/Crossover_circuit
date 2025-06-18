@@ -501,6 +501,53 @@ void DrawBlock(int n_block)
     func_arr[2]->Draw("SAME");
 }
 
+void DrawBlock2(int n_block)
+{
+    if (n_block < 0 || n_block >= N_BLOCKS)
+    {
+        return;
+    }
+
+    TGraphErrors *V_arr[3]{
+        new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %lg %*lg %*lg %lg %lg"},
+        new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %lg %*lg %lg %lg"},
+        new TGraphErrors{(output_data_block_filename + std::to_string(n_block) + ".txt").c_str(), "%lg %*lg %*lg %lg %lg %lg"}};
+
+    TF1 *func_arr[3]{
+        new TF1{"V_s_fit", "[0]*cos([1]*x - [2])"},
+        new TF1{"V_w_fit", "[0]*cos([1]*x - [2])"},
+        new TF1{"V_t_fit", "[0]*cos([1]*x - [2])"}};
+
+    V_arr[0]->SetMarkerColor(kBlack);
+    V_arr[1]->SetMarkerColor(kRed);
+    V_arr[2]->SetMarkerColor(kBlue);
+
+    V_arr[0]->SetLineColor(kBlack);
+    V_arr[1]->SetLineColor(kRed);
+    V_arr[2]->SetLineColor(kBlue);
+
+    func_arr[0]->SetLineColor(kBlack);
+    func_arr[1]->SetLineColor(kRed);
+    func_arr[2]->SetLineColor(kBlue);
+
+    func_arr[0]->SetNpx(10000);
+    func_arr[1]->SetNpx(10000);
+    func_arr[2]->SetNpx(10000);
+
+
+
+    TMultiGraph *V_multi = new TMultiGraph();
+    // V_multi->GetXaxis()->SetTitle("Time (s)");
+    // V_multi->GetYaxis()->SetTitle("Voltage (V)");
+    // V_multi->SetTitle("Elvis Step");
+    V_multi->Add(V_arr[0]);
+    V_multi->Add(V_arr[1]);
+    V_multi->Add(V_arr[2]);
+
+    TCanvas *test_canva = new TCanvas("test_canva", std::to_string(n_block).c_str(), 0, 0, 800, 600);
+    V_multi->Draw("APE");
+}
+
 void DrawSubBlock(int n_block, int n_sub_block)
 {
     if (n_block < 0 || n_block >= N_BLOCKS_ERR)
